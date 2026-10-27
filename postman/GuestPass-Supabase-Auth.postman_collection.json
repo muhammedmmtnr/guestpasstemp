@@ -1,0 +1,169 @@
+{
+  "info": {
+    "_postman_id": "8c3870af-92a1-4d4a-9c31-71af76d2fc81",
+    "name": "GuestPass - Supabase Auth",
+    "description": "Email/password authentication and Google OAuth initiation for the GuestPass restaurant console. Set supabase_url, supabase_anon_key, email, password, and redirect_url in a Postman environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "supabase_url", "value": "https://your-project.supabase.co" },
+    { "key": "supabase_anon_key", "value": "your-supabase-publishable-or-anon-key" },
+    { "key": "email", "value": "owner@example.com" },
+    { "key": "password", "value": "replace-with-a-test-password" },
+    { "key": "name", "value": "Restaurant Owner" },
+    { "key": "access_token", "value": "" },
+    { "key": "refresh_token", "value": "" },
+    { "key": "redirect_url", "value": "http://localhost:5173" }
+  ],
+  "item": [
+    {
+      "name": "Sign up with email and password",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "apikey", "value": "{{supabase_anon_key}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"data\": {\n    \"name\": \"{{name}}\",\n    \"role\": \"restaurant\"\n  }\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{supabase_url}}/auth/v1/signup",
+          "host": ["{{supabase_url}}"],
+          "path": ["auth", "v1", "signup"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.access_token) pm.environment.set('access_token', body.access_token);",
+              "if (body.refresh_token) pm.environment.set('refresh_token', body.refresh_token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sign in with email and password",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "apikey", "value": "{{supabase_anon_key}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{supabase_url}}/auth/v1/token?grant_type=password",
+          "host": ["{{supabase_url}}"],
+          "path": ["auth", "v1", "token"],
+          "query": [{ "key": "grant_type", "value": "password" }]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.access_token) pm.environment.set('access_token', body.access_token);",
+              "if (body.refresh_token) pm.environment.set('refresh_token', body.refresh_token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get current user",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "apikey", "value": "{{supabase_anon_key}}" },
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": {
+          "raw": "{{supabase_url}}/auth/v1/user",
+          "host": ["{{supabase_url}}"],
+          "path": ["auth", "v1", "user"]
+        }
+      }
+    },
+    {
+      "name": "Refresh session",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "apikey", "value": "{{supabase_anon_key}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{supabase_url}}/auth/v1/token?grant_type=refresh_token",
+          "host": ["{{supabase_url}}"],
+          "path": ["auth", "v1", "token"],
+          "query": [{ "key": "grant_type", "value": "refresh_token" }]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.access_token) pm.environment.set('access_token', body.access_token);",
+              "if (body.refresh_token) pm.environment.set('refresh_token', body.refresh_token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sign out",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "apikey", "value": "{{supabase_anon_key}}" },
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": {
+          "raw": "{{supabase_url}}/auth/v1/logout",
+          "host": ["{{supabase_url}}"],
+          "path": ["auth", "v1", "logout"]
+        }
+      }
+    },
+    {
+      "name": "Start Google OAuth",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "apikey", "value": "{{supabase_anon_key}}" }],
+        "description": "Starts the Google redirect flow. Complete Google sign-in in a browser; the restaurant console uses the Supabase SDK for the full callback/session flow.",
+        "url": {
+          "raw": "{{supabase_url}}/auth/v1/authorize?provider=google&redirect_to={{redirect_url}}",
+          "host": ["{{supabase_url}}"],
+          "path": ["auth", "v1", "authorize"],
+          "query": [
+            { "key": "provider", "value": "google" },
+            { "key": "redirect_to", "value": "{{redirect_url}}" }
+          ]
+        }
+      },
+      "protocolProfileBehavior": { "followRedirects": false }
+    }
+  ]
+}

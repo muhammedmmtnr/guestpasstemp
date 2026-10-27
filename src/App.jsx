@@ -20,15 +20,16 @@ import {
   listQueueActivity,
   removeBooking,
   saveProfile,
-  sendOtp,
+  signInWithGoogle,
+  signInWithPassword,
   signOut,
+  signUpWithPassword,
   submitPublicReview,
   subscribeToAuth,
   subscribeToBookings,
   updateBookingStatus,
   updateRestaurant,
   uploadRestaurantImage,
-  verifyOtp,
 } from './data'
 
 const adminNavigation = [
@@ -400,36 +401,60 @@ function EmptyState({ title, text, action, onAction }) {
 }
 
 function AuthPage({ onAuthenticated, onBack, onDemo }) {
-  const [identifier, setIdentifier] = useState('')
-  const [token, setToken] = useState('')
-  const [step, setStep] = useState('identifier')
+  const [mode, setMode] = useState('signin')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
-  async function requestCode(event) {
+  async function submitPassword(event) {
     event.preventDefault()
     setBusy(true); setError(''); setNotice('')
-    try { await sendOtp(identifier); setStep('otp'); setNotice(`A one-time sign-in code was sent to ${identifier}.`) }
-    catch (caught) { setError(caught.message || 'Unable to send your sign-in code.') }
+    try {
+      if (mode === 'signup') {
+        const { user, session } = await signUpWithPassword(email, password, name)
+        if (session) await onAuthenticated(user)
+        else {
+          setMode('signin')
+          setNotice('Your account was created. Check your email to confirm your address, then sign in.')
+        }
+      } else {
+        const user = await signInWithPassword(email, password)
+        await onAuthenticated(user)
+      }
+    }
+    catch (caught) { setError(caught.message || 'Unable to authenticate. Please try again.') }
     finally { setBusy(false) }
   }
 
-  async function confirmCode(event) {
-    event.preventDefault()
+  async function continueWithGoogle() {
     setBusy(true); setError('')
-    try { const user = await verifyOtp(identifier, token); await onAuthenticated(user) }
-    catch (caught) { setError(caught.message || 'That code could not be verified. Try again.') }
+    try { await signInWithGoogle() }
+    catch (caught) { setError(caught.message || 'Google sign-in could not be started.') }
     finally { setBusy(false) }
   }
 
+  const isSignup = mode === 'signup'
   return <main className="auth-layout"><div className="auth-showcase"><Brand /><div className="auth-showcase-copy"><span className="eyebrow">RESTAURANT OPERATIONS, MADE SIMPLE</span><h1>Give every guest a better wait.</h1><p>Bring your waitlist, guest updates, and service insights together in one calm, easy-to-use workspace.</p><div className="auth-showcase-stats"><span><strong>Live</strong> queue visibility</span><span><strong>QR</strong> guest check-ins</span><span><strong>Simple</strong> service analytics</span></div></div><span className="showcase-orbit orbit-one" /><span className="showcase-orbit orbit-two" /></div>
-    <section className="auth-card"><button className="back-link" onClick={onBack}><Icon name="back" size={18} /> Guest view</button><span className="eyebrow">{isDemoMode ? 'BROWSER DEMO' : 'RESTAURANT PORTAL'}</span><h2>{step === 'otp' ? 'Check your inbox' : 'Welcome to GuestPass'}</h2><p>{step === 'otp' ? `Enter the verification code sent to ${identifier}.` : 'Sign in or register your restaurant with a one-time code.'}</p><Notice type="success">{notice}</Notice><Notice>{error}</Notice>
-      {step === 'identifier' ? <form onSubmit={requestCode} className="auth-form"><label>Email or phone number<input value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder="you@restaurant.com or +1 555 123 4567" autoComplete="username" required /></label><Button type="submit" variant="primary" disabled={busy}>{busy ? <><span className="spinner" /> Sending code…</> : 'Continue with a one-time code'}</Button></form> : <form onSubmit={confirmCode} className="auth-form"><label>6-digit verification code<input className="otp-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={token} onChange={(event) => setToken(event.target.value.replace(/\D/g, ''))} placeholder="000000" required /></label><Button type="submit" variant="primary" disabled={busy || token.length < 6}>{busy ? 'Verifying…' : 'Verify and continue'}</Button><button className="text-button" type="button" onClick={() => { setStep('identifier'); setToken(''); setError('') }}>Use a different email or phone</button></form>}
+    <section className="auth-card"><button className="back-link" onClick={onBack}><Icon name="back" size={18} /> Guest view</button><span className="eyebrow">{isDemoMode ? 'BROWSER DEMO' : 'RESTAURANT PORTAL'}</span><h2>{isSignup ? 'Create your account' : 'Welcome to GuestPass'}</h2><p>{isSignup ? 'Create an account to set up your restaurant workspace.' : 'Sign in to manage your restaurant and guest queue.'}</p><Notice type="success">{notice}</Notice><Notice>{error}</Notice>
+      <form onSubmit={submitPassword} className="auth-form">
+        {isSignup && <label>Your name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Restaurant owner" autoComplete="name" maxLength={120} required /></label>}
+        <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@restaurant.com" autoComplete="email" required /></label>
+        <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={isSignup ? 'At least 6 characters' : 'Your password'} autoComplete={isSignup ? 'new-password' : 'current-password'} minLength={6} required /></label>
+        <Button type="submit" variant="primary" disabled={busy}>{busy ? <><span className="spinner" /> Please wait…</> : isSignup ? 'Create restaurant account' : 'Sign in'}</Button>
+      </form>
+      <div className="auth-divider"><span>or continue with</span></div><Button className="google-login" onClick={continueWithGoogle} disabled={busy}><GoogleMark /> Continue with Google</Button>
+      <p className="auth-switch">{isSignup ? 'Already have an account?' : 'New to GuestPass?'} <button type="button" onClick={() => { setMode(isSignup ? 'signin' : 'signup'); setError(''); setNotice('') }}>{isSignup ? 'Sign in' : 'Create an account'}</button></p>
       {isDemoMode && <div className="demo-login"><div><strong>Try the dashboard</strong><p>Demo changes are saved only in this browser.</p></div><Button onClick={onDemo}>Explore demo workspace <Icon name="arrow" size={16} /></Button></div>}
-      {!isDemoMode && <p className="auth-security"><Icon name="check" size={15} /> Password-free sign-in. Your code expires shortly.</p>}
+      {!isDemoMode && <p className="auth-security"><Icon name="check" size={15} /> Your account is securely managed by Supabase.</p>}
     </section>
   </main>
+}
+
+function GoogleMark() {
+  return <svg className="google-mark" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z" /><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.75 7.18l7.73 6C44.43 38.05 46.98 31.95 46.98 24.55Z" /><path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19Z" /><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.15 1.45-4.92 2.3-8.18 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z" /></svg>
 }
 
 function SetupRestaurantPage({ user, onCreated, onBack }) {
@@ -727,7 +752,7 @@ function App() {
 
   async function authenticated(userData) {
     setUser(userData)
-    const profileName = userData.user_metadata?.name || ''
+    const profileName = userData.user_metadata?.name || userData.user_metadata?.full_name || ''
     await saveProfile(userData.id, { name: profileName, role: 'restaurant' })
     const owned = await getOwnedRestaurant(userData.id)
     if (owned) { setRestaurant(owned); await loadBookings(owned.id); navigate('dashboard') }

@@ -449,23 +449,31 @@ export async function removeBooking(bookingId) {
   writeStorage(BOOKINGS_KEY, bookings.filter((item) => item.id !== bookingId))
 }
 
-export async function sendOtp(identifier) {
-  if (!supabase) throw new Error('Email and phone OTP sign-in requires Supabase configuration.')
-  const value = identifier.trim()
-  const isEmail = value.includes('@')
-  if (isEmail ? !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) : !/^\+[1-9]\d{6,14}$/.test(value)) {
-    throw new Error('Enter a valid email address or phone number in international format (for example, +14155552671).')
-  }
-  const { error } = await supabase.auth.signInWithOtp(isEmail ? { email: value, options: { shouldCreateUser: true } } : { phone: value, options: { shouldCreateUser: true } })
-  if (error) throw error
-}
-
-export async function verifyOtp(identifier, token) {
-  if (!supabase) throw new Error('Email and phone OTP sign-in requires Supabase configuration.')
-  const value = identifier.trim()
-  const { data, error } = await supabase.auth.verifyOtp(value.includes('@') ? { email: value, token, type: 'email' } : { phone: value, token, type: 'sms' })
+export async function signInWithPassword(email, password) {
+  if (!supabase) throw new Error('Email and password sign-in requires Supabase configuration.')
+  const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
   if (error) throw error
   return data.user
+}
+
+export async function signUpWithPassword(email, password, name) {
+  if (!supabase) throw new Error('Restaurant registration requires Supabase configuration.')
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim(),
+    password,
+    options: { data: { name: name.trim(), role: 'restaurant' } },
+  })
+  if (error) throw error
+  return data
+}
+
+export async function signInWithGoogle() {
+  if (!supabase) throw new Error('Google sign-in requires Supabase configuration.')
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin },
+  })
+  if (error) throw error
 }
 
 export async function saveProfile(userId, profile) {
