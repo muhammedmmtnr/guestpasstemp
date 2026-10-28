@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import ContractUnavailablePage from './ContractUnavailablePage';
 import SignInPage from './SignInPage';
+import SetupPage from './SetupPage';
 import UserDetailsPage from './UserDetailsPage';
 import UserManagementPage from './UserManagementPage';
-import { useAuth } from './AuthProvider';
-import QueueApp from './queue/QueueApp';
+import { isSuperAdmin, useAdminAuth } from './AdminAuthProvider';
+import { adminDashboardApi } from './api';
 
 const sidebarItems = [
   { label: 'Overview', active: true, icon: '⌂' },
@@ -23,9 +24,6 @@ const sidebarItems = [
   { label: 'Roles & Permissions', icon: '◘' },
   { label: 'Settings', icon: '⚙' },
 ];
-const SIGN_IN_PATHS = ['/sign-in', '/auth/sign-in'];
-const SIGN_UP_PATHS = ['/sign-up', '/auth/sign-up'];
-
 const stats = [
   { title: 'Total Restaurants', value: '248', delta: '+12%', detail: 'from last month', tone: 'green', icon: '▣' },
   { title: 'Active Restaurants', value: '216', delta: '+10%', detail: 'from last month', tone: 'green', icon: '✓' },
@@ -72,124 +70,120 @@ const recentActivity = [
   'New user registered: admin@guestpass.com',
 ];
 
+const statKeys = [
+  ['totalRestaurants', 'total_restaurants', 'total_restaurant_count'],
+  ['activeRestaurants', 'active_restaurants', 'active_restaurant_count'],
+  ['suspendedRestaurants', 'suspended_restaurants', 'suspended_restaurant_count'],
+  ['pendingApproval', 'pending_approval', 'pending_approvals'],
+  ['bookingsToday', 'bookings_today', 'today_bookings'],
+  ['queueEntriesToday', 'queue_entries_today', 'today_queue_entries'],
+  ['monthlyRecurringRevenue', 'monthly_recurring_revenue', 'mrr'],
+  ['trialExpiring', 'trial_expiring', 'trials_expiring'],
+];
+
+function normalizeDashboardStats(payload) {
+  const data = payload?.data ?? payload;
+  const values = data?.stats ?? data?.metrics ?? data;
+  const liveValues = Array.isArray(values)
+    ? new Map(values.map((item) => [
+      String(item?.key ?? item?.title ?? item?.label ?? '').toLowerCase().replace(/[^a-z0-9]/g, ''),
+      item,
+    ]))
+    : values && typeof values === 'object'
+      ? new Map(Object.entries(values).map(([key, value]) => [key.toLowerCase().replace(/[^a-z0-9]/g, ''), value]))
+      : new Map();
+  let matched = 0;
+
+  const normalized = stats.map((stat, index) => {
+    const aliases = statKeys[index].map((key) => key.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const liveValue = aliases.map((key) => liveValues.get(key)).find((value) => value !== undefined);
+    if (liveValue === undefined) return stat;
+
+    const value = liveValue && typeof liveValue === 'object'
+      ? liveValue.value ?? liveValue.count ?? liveValue.total
+      : liveValue;
+    if (value === undefined || value === null || !['string', 'number'].includes(typeof value)) {
+      return stat;
+    }
+
+    matched += 1;
+    return {
+      ...stat,
+      value: typeof value === 'number' ? value.toLocaleString() : value,
+      delta: typeof liveValue === 'object' && liveValue.delta ? liveValue.delta : 'Live',
+      detail: typeof liveValue === 'object' && liveValue.detail ? liveValue.detail : 'from dashboard API',
+    };
+  });
+
+  return matched > 0 ? normalized : null;
+}
+
 function App() {
   const pathname = window.location.pathname;
-  const auth = useAuth();
-  const isProtectedRoute = pathname === '/admin/users'
-    || pathname === '/admin/users/'
-    || /^\/(?:admin\/)?users\/[^/]+\/?$/.test(pathname);
+  const auth = useAdminAuth();
+  const [dashboardStats, setDashboardStats] = useState(null);
+  const [dashboardStatsError, setDashboardStatsError] = useState('');
+  const isAdminHome = pathname === '/admin' || pathname === '/admin/';
+  const isPublicAdminAuthRoute = pathname === '/admin/setup' || pathname === '/admin/login';
 
   useEffect(() => {
-    if (!auth.isConfigured || auth.isLoading) {
-      return;
-    }
+    if (!isAdminHome || auth.isLoading || !auth.session) return undefined;
+    const controller = new AbortController();
+    setDashboardStatsError('');
+    adminDashboardApi.stats({ signal: controller.signal })
+      .then((payload) => {
+        if (!controller.signal.aborted) setDashboardStats(normalizeDashboardStats(payload));
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setDashboardStats(null);
+        if (error.status !== 404) setDashboardStatsError(error.message);
+      });
 
-    if (isProtectedRoute && !auth.session) {
-      const query = new URLSearchParams({ from: `${pathname}${window.location.search}` });
-      window.location.replace(`/sign-in?${query}`);
-    } else if (SIGN_IN_PATHS.includes(pathname) && auth.session) {
+    return () => controller.abort();
+  }, [auth.isLoading, auth.session, isAdminHome]);
+
+  useEffect(() => {
+    if (auth.isLoading) return;
+    if (pathname === '/admin/setup' && auth.session) {
+      window.location.replace('/admin');
+    } else if (pathname === '/admin/login' && auth.session) {
       window.location.replace(getSafeReturnPath());
+    } else if (!isPublicAdminAuthRoute && !auth.session) {
+      const query = new URLSearchParams({ from: `${pathname}${window.location.search}` });
+      window.location.replace(`/admin/login?${query}`);
     }
-  }, [auth.isConfigured, auth.isLoading, auth.session, isProtectedRoute, pathname]);
+  }, [auth.isLoading, auth.session, isPublicAdminAuthRoute, pathname]);
 
-  if (pathname.startsWith('/r/') || pathname === '/staff' || pathname.startsWith('/staff/')) {
-    return <QueueApp path={pathname} />;
+  if (pathname === '/admin/setup') {
+    return auth.session
+      ? <main className="user-details-page"><p role="status">Opening the admin panel…</p></main>
+      : <SetupPage />;
+  }
+
+  if (pathname === '/admin/login') {
+    return auth.session
+      ? <main className="user-details-page"><p role="status">Opening the admin panel…</p></main>
+      : <SignInPage />;
+  }
+
+  if (auth.isLoading) {
+    return <main className="user-details-page"><p role="status">Checking admin session…</p></main>;
   }
 
   if (pathname === '/admin/users' || pathname === '/admin/users/') {
-    if (!auth.isConfigured) {
-      return (
-        <ContractUnavailablePage
-          title="Configure admin authentication"
-          endpoint="Supabase Auth"
-          details={[
-            'Set VITE_SUPABASE_URL and a Supabase publishable/anon key in .env.local.',
-            'Do not use a Supabase service-role key in the browser.',
-            'The backend must accept the Supabase Auth access token for this project.',
-          ]}
-        />
-      );
-    }
-    if (auth.isLoading) {
-      return <main className="user-details-page"><p role="status">Checking Supabase session…</p></main>;
-    }
     if (!auth.session) {
-      return <main className="user-details-page"><p role="status">Redirecting to sign in…</p></main>;
+      return <main className="user-details-page"><p role="status">Redirecting to admin sign in…</p></main>;
     }
 
     return <UserManagementPage onSignOut={auth.signOut} />;
   }
 
-  if (SIGN_IN_PATHS.includes(pathname)) {
-    if (auth.isConfigured && auth.isLoading) {
-      return <main className="user-details-page"><p role="status">Checking Supabase session…</p></main>;
-    }
-    if (auth.isConfigured && auth.session) {
-      return <main className="user-details-page"><p role="status">Opening the admin panel…</p></main>;
-    }
-    if (!auth.isConfigured) {
-      return (
-        <ContractUnavailablePage
-          title="Configure Supabase Auth"
-          endpoint="Supabase Auth signInWithPassword"
-          details={[
-            'Set VITE_SUPABASE_URL in .env.local.',
-            'Set VITE_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_ANON_KEY in .env.local.',
-            'Use only a public publishable/anon key; a service-role key is rejected.',
-          ]}
-        />
-      );
-    }
-    return (
-      <SignInPage />
-    );
-  }
-
-  if (SIGN_UP_PATHS.includes(pathname)) {
-    return (
-      <ContractUnavailablePage
-        title="Create an account"
-        endpoint="POST /auth/sign-up"
-        details={[
-          'Required and optional registration fields and validation rules.',
-          'Supported account types and verification requirements.',
-          'Success response and post-registration navigation behavior.',
-        ]}
-      />
-    );
-  }
-
-  if (pathname === '/profile' || pathname === '/users/me/profile' || pathname === '/users/me/profile-image') {
-    return (
-      <ContractUnavailablePage
-        title="My profile"
-        endpoint="POST /users/me/profile and POST /users/me/profile-image"
-        details={[
-          'A verified current-user GET endpoint to load the existing profile.',
-          'Editable profile fields and update semantics.',
-          'Image multipart field name, accepted file types, limits, and response format.',
-        ]}
-      />
-    );
-  }
-
   const userDetailsMatch = pathname.match(/^\/(?:admin\/)?users\/([^/]+)\/?$/);
 
   if (userDetailsMatch) {
-    if (!auth.isConfigured) {
-      return (
-        <ContractUnavailablePage
-          title="Configure admin authentication"
-          endpoint="Supabase Auth"
-          details={['Set the Supabase URL and public anon/publishable key in .env.local to view protected user records.']}
-        />
-      );
-    }
-    if (auth.isLoading) {
-      return <main className="user-details-page"><p role="status">Checking Supabase session…</p></main>;
-    }
     if (!auth.session) {
-      return <main className="user-details-page"><p role="status">Redirecting to sign in…</p></main>;
+      return <main className="user-details-page"><p role="status">Redirecting to admin sign in…</p></main>;
     }
     try {
       return <UserDetailsPage userId={decodeURIComponent(userDetailsMatch[1])} />;
@@ -202,6 +196,24 @@ function App() {
         />
       );
     }
+  }
+
+  if (!auth.session || !isSuperAdmin(auth.user)) {
+    return <main className="user-details-page"><p role="status">Redirecting to admin sign in…</p></main>;
+  }
+
+  const displayName = auth.user.fullName
+    || auth.user.full_name
+    || auth.user.name
+    || auth.user.profile?.full_name
+    || auth.user.email
+    || 'Super Admin';
+  const displayRole = String(auth.user.role ?? auth.user.accountType ?? auth.user.account_type)
+    .replace(/[_-]+/g, ' ');
+
+  function handleSignOut() {
+    auth.signOut();
+    window.location.replace('/admin/login');
   }
 
   return (
@@ -250,18 +262,22 @@ function App() {
           <div className="topbar-actions">
             <div className="date-pill">Apr 24, 2025 — Apr 30, 2025</div>
             <div className="avatar-wrap">
-              <div className="avatar">S</div>
+              <div className="avatar">{displayName.slice(0, 1).toUpperCase()}</div>
               <div>
-                <div className="user-name">Super Admin</div>
-                <div className="user-role">Platform Owner</div>
+                <div className="user-name">{displayName}</div>
+                <div className="user-role">{displayRole}</div>
               </div>
+              <button type="button" className="admin-signout" onClick={handleSignOut}>Sign out</button>
             </div>
           </div>
         </header>
 
         <p className="dashboard-demo-notice">
-          Overview figures and restaurant rows are static design examples, not live API data.
-          User Management is connected to the backend.
+          {dashboardStats
+            ? 'Dashboard metrics include live API data. Registration, queue, restaurant and activity panels remain examples.'
+            : 'Overview figures and restaurant rows are static design examples, not live API data.'}
+          {' '}User Management is connected to the backend.
+          {dashboardStatsError && <span> Dashboard stats unavailable: {dashboardStatsError}</span>}
         </p>
 
         <section className="dashboard-grid">
@@ -275,7 +291,7 @@ function App() {
             </div>
 
             <div className="stats-grid">
-              {stats.map((stat) => (
+              {(dashboardStats || stats).map((stat) => (
                 <div className="stat-card" key={stat.title}>
                   <div className="stat-header">
                     <span className={`stat-icon ${stat.tone}`}>{stat.icon}</span>
@@ -479,10 +495,14 @@ function App() {
 
 function getSafeReturnPath() {
   const requestedPath = new URLSearchParams(window.location.search).get('from');
-  if (requestedPath === '/admin/users' || requestedPath?.startsWith('/admin/users/')) {
+  if (
+    requestedPath?.startsWith('/admin/')
+    && requestedPath !== '/admin/login'
+    && requestedPath !== '/admin/setup'
+  ) {
     return requestedPath;
   }
-  return '/admin/users';
+  return '/admin';
 }
 
 export default App;

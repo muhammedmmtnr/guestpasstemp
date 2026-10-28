@@ -1,17 +1,17 @@
 import { useState } from 'react';
-import { useAuth } from './AuthProvider';
+import { useAdminAuth } from './AdminAuthProvider';
 
 function getReturnPath() {
   const requestedPath = new URLSearchParams(window.location.search).get('from');
-  if (requestedPath === '/admin/users' || requestedPath?.startsWith('/admin/users/')) {
+  if (requestedPath === '/admin' || requestedPath?.startsWith('/admin/')) {
     return requestedPath;
   }
 
-  return '/admin/users';
+  return '/admin';
 }
 
 function SignInPage() {
-  const { configurationError, signIn } = useAuth();
+  const { signIn } = useAdminAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -46,55 +46,45 @@ function SignInPage() {
           <div>
             <p className="user-details-eyebrow">GuestPass Admin</p>
             <h1 id="sign-in-title">Sign in</h1>
-            <p className="user-details-id">Use your Supabase Auth account.</p>
+            <p className="user-details-id">Sign in with your super admin account.</p>
           </div>
         </div>
 
-        {configurationError ? (
-          <div className="user-details-error" role="alert">
-            <strong>Supabase Auth is not configured</strong>
-            <p>{configurationError}</p>
-            <p>Restart the Vite dev server after setting the public project values.</p>
-          </div>
-        ) : (
-          <>
-            {reason === 'expired' && (
-              <p className="sign-in-notice" role="status">
-                Your session expired or was rejected. Please sign in again.
-              </p>
-            )}
-            {error && <p className="user-details-error" role="alert">{error}</p>}
-            <form className="sign-in-form" onSubmit={handleSubmit}>
-              <label>
-                <span>Email</span>
-                <input
-                  type="email"
-                  name="email"
-                  autoComplete="username"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                  disabled={isSubmitting}
-                />
-              </label>
-              <label>
-                <span>Password</span>
-                <input
-                  type="password"
-                  name="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                  disabled={isSubmitting}
-                />
-              </label>
-              <button type="submit" className="user-management-apply" disabled={isSubmitting}>
-                {isSubmitting ? 'Signing in…' : 'Sign in'}
-              </button>
-            </form>
-          </>
+        {reason === 'expired' && (
+          <p className="sign-in-notice" role="status">
+            Your session expired or was rejected. Please sign in again.
+          </p>
         )}
+        {error && <p className="user-details-error" role="alert">{error}</p>}
+        <form className="sign-in-form" onSubmit={handleSubmit}>
+          <label>
+            <span>Email</span>
+            <input
+              type="email"
+              name="email"
+              autoComplete="username"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              disabled={isSubmitting}
+            />
+          </label>
+          <label>
+            <span>Password</span>
+            <input
+              type="password"
+              name="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              disabled={isSubmitting}
+            />
+          </label>
+          <button type="submit" className="user-management-apply" disabled={isSubmitting}>
+            {isSubmitting ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
       </section>
     </main>
   );

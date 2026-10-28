@@ -1,6 +1,7 @@
 const DEFAULT_API_BASE_URL = '/api';
 const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/+$/, '');
 let accessTokenProvider = null;
+let adminAccessTokenProvider = null;
 const DEFAULT_ORIGIN = 'http://localhost:5173';
 
 const ERROR_MESSAGES = {
@@ -30,6 +31,14 @@ export function setApiAccessTokenProvider(provider) {
   accessTokenProvider = provider;
 }
 
+export function setAdminApiAccessTokenProvider(provider) {
+  if (provider !== null && typeof provider !== 'function') {
+    throw new TypeError('The admin access token provider must be a function or null.');
+  }
+
+  adminAccessTokenProvider = provider;
+}
+
 function getApiUrl(path, query) {
   const origin = typeof window === 'undefined' ? DEFAULT_ORIGIN : window.location.origin;
   const baseUrl = new URL(`${API_BASE_URL}/`, origin);
@@ -54,11 +63,24 @@ function sanitizeErrorMessage(message) {
     .replace(/\b(password|access[_ -]?token|refresh[_ -]?token|api[_ -]?key)\s*[:=]\s*[^,\s;]+/gi, '$1=[redacted]');
 }
 
-async function request(path, { method = 'GET', body, query, signal, credentials = 'same-origin' } = {}) {
-  const headers = new Headers();
+async function request(path, {
+  method = 'GET',
+  body,
+  query,
+  signal,
+  credentials = 'same-origin',
+  headers: requestHeaders,
+  authMode = 'default',
+} = {}) {
+  const headers = new Headers(requestHeaders);
   let requestBody;
 
-  const token = accessTokenProvider ? await accessTokenProvider() : null;
+  const tokenProvider = authMode === 'admin'
+    ? adminAccessTokenProvider
+    : authMode === 'none'
+      ? null
+      : accessTokenProvider;
+  const token = tokenProvider ? await tokenProvider() : null;
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
@@ -109,7 +131,9 @@ async function request(path, { method = 'GET', body, query, signal, credentials 
 
   if (!response.ok) {
     if (response.status === 401 && typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('guestpass:unauthorized'));
+      window.dispatchEvent(new CustomEvent(
+        authMode === 'admin' ? 'guestpass:admin-unauthorized' : 'guestpass:unauthorized',
+      ));
     }
 
     const apiMessage = responseBody && typeof responseBody === 'object'
@@ -159,6 +183,22 @@ export const authApi = {
   }),
 };
 
+export const adminAuthApi = {
+  bootstrap: (payload, setupKey, options) => request('admin/auth/bootstrap', {
+    ...options,
+    method: 'POST',
+    body: payload,
+    headers: { ...options?.headers, 'x-setup-key': setupKey },
+    authMode: 'none',
+  }),
+  login: (payload, options) => request('admin/auth/login', {
+    ...options,
+    method: 'POST',
+    body: payload,
+    authMode: 'none',
+  }),
+};
+
 export const usersApi = {
   updateMyProfile: (payload, options) => request('users/me/profile', {
     ...options,
@@ -184,20 +224,39 @@ export const adminUsersApi = {
     return request('admin/users', {
       ...options,
       query: { page, limit, accountType },
+      authMode: 'admin',
     });
   },
-  get: (userId, options) => request(`admin/users/${requireUserId(userId)}`, options),
+  create: (payload, options) => request('admin/users', {
+    ...options,
+    method: 'POST',
+    body: payload,
+    authMode: 'admin',
+  }),
+  get: (userId, options) => request(`admin/users/${requireUserId(userId)}`, {
+    ...options,
+    authMode: 'admin',
+  }),
   updateStatus: (userId, payload, options) => request(
     `admin/users/${requireUserId(userId)}/status`,
     {
       ...options,
       method: 'POST',
       body: payload,
+      authMode: 'admin',
     },
   ),
   delete: (userId, options) => request(`admin/users/${requireUserId(userId)}`, {
     ...options,
     method: 'DELETE',
+    authMode: 'admin',
+  }),
+};
+
+export const adminDashboardApi = {
+  stats: (options) => request('admin/dashboard/stats', {
+    ...options,
+    authMode: 'admin',
   }),
 };
 

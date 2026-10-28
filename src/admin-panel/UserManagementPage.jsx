@@ -150,7 +150,7 @@ function UserManagementPage({ onSignOut }) {
     setSignOutError('');
     try {
       await onSignOut();
-      window.location.replace('/sign-in');
+      window.location.replace('/admin/login');
     } catch {
       setSignOutError('Could not clear the local session. Please try again.');
       setIsSigningOut(false);
@@ -159,7 +159,7 @@ function UserManagementPage({ onSignOut }) {
 
   return (
     <main className="user-management-page">
-      <a className="user-details-back" href="/">← Back to dashboard</a>
+      <a className="user-details-back" href="/admin">← Back to dashboard</a>
       <section className="user-management-card" aria-labelledby="user-management-title">
         <div className="user-management-heading">
           <div>
@@ -235,7 +235,7 @@ function UserManagementPage({ onSignOut }) {
             <strong>Unable to load users</strong>
             <p>{error}</p>
             {errorStatus === 401 ? (
-              <p>The sign-in page can establish a Supabase Auth session. Check the project configuration and sign in again.</p>
+              <p>Your super admin session is no longer valid. Sign in again to continue.</p>
             ) : null}
             <button type="button" className="user-management-retry" onClick={() => setRetryKey((current) => current + 1)}>
               Retry

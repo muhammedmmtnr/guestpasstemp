@@ -257,6 +257,17 @@ button {
   font-size: 0.72rem;
 }
 
+.admin-signout {
+  margin-left: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--white);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1fr 330px;

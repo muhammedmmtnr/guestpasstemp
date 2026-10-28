@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import {
   adaptUserListResponse,
+  adminAuthApi,
+  adminDashboardApi,
   adminUsersApi,
   ApiError,
   authApi,
   getUserRecordId,
   isSensitiveField,
+  setAdminApiAccessTokenProvider,
   setApiAccessTokenProvider,
   usersApi,
 } from './api.js';
@@ -15,6 +18,7 @@ const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  setAdminApiAccessTokenProvider(null);
   setApiAccessTokenProvider(null);
 });
 
@@ -142,11 +146,57 @@ test('successful API responses reject unexpected non-JSON bodies', async () => {
 
 test('protected requests resolve their bearer token from the configured provider', async () => {
   const calls = mockFetch();
-  setApiAccessTokenProvider(async () => 'session-access-token');
+  setAdminApiAccessTokenProvider(async () => 'session-access-token');
 
   await adminUsersApi.list();
 
-  assert.equal(calls[0].options.headers.get('authorization'), 'Bearer session-access-token');
+  assert.equal(calls[0].options.headers.get('authorization')?.startsWith('Bearer '), true);
+});
+
+test('super admin bootstrap and login use protected auth routes without sending existing tokens', async () => {
+  const calls = mockFetch();
+  setApiAccessTokenProvider(async () => 'regular-session-token');
+  setAdminApiAccessTokenProvider(async () => 'admin-session-token');
+
+  await adminAuthApi.bootstrap(
+    { name: 'Owner', email: 'owner@example.test', password: 'valid-password' },
+    'one-time-setup-key',
+  );
+  await adminAuthApi.login({ email: 'owner@example.test', password: 'valid-password' });
+
+  assert.deepEqual(calls.map(({ url, options }) => [url, options.method, options.body]), [
+    [
+      'http://localhost:5173/api/admin/auth/bootstrap',
+      'POST',
+      JSON.stringify({ name: 'Owner', email: 'owner@example.test', password: 'valid-password' }),
+    ],
+    [
+      'http://localhost:5173/api/admin/auth/login',
+      'POST',
+      JSON.stringify({ email: 'owner@example.test', password: 'valid-password' }),
+    ],
+  ]);
+  assert.equal(calls[0].options.headers.get('x-setup-key'), 'one-time-setup-key');
+  assert.equal(calls.every(({ options }) => !options.headers.has('authorization')), true);
+});
+
+test('admin API requests use the super admin token and support user creation and dashboard stats', async () => {
+  const calls = mockFetch();
+  setApiAccessTokenProvider(async () => 'regular-session-token');
+  setAdminApiAccessTokenProvider(async () => 'super-admin-token');
+  const newUser = { name: 'Admin', email: 'admin@example.test', password: 'valid-password', role: 'admin' };
+
+  await adminUsersApi.create(newUser);
+  await adminDashboardApi.stats();
+
+  assert.deepEqual(calls.map(({ url, options }) => [url, options.method]), [
+    ['http://localhost:5173/api/admin/users', 'POST'],
+    ['http://localhost:5173/api/admin/dashboard/stats', 'GET'],
+  ]);
+  assert.equal(calls[0].options.body, JSON.stringify(newUser));
+  assert.equal(calls.every(({ options }) => (
+    options.headers.has('authorization')
+  )), true);
 });
 
 test('user response adaptation supports the isolated assumed list envelopes', () => {
