@@ -8,7 +8,7 @@ import { isSuperAdmin, useAdminAuth } from './AdminAuthProvider';
 import { adminDashboardApi } from './api';
 
 const sidebarItems = [
-  { label: 'Overview', active: true, icon: '⌂' },
+  { label: 'Overview', active: true, icon: '⌂', href: '/admin' },
   { label: 'Restaurants', icon: '◫' },
   { label: 'Registrations & Approval', badge: '12', icon: '◌' },
   { label: 'Bookings', icon: '✓' },
@@ -229,13 +229,20 @@ function App() {
 
         <nav className="sidebar-nav">
           {sidebarItems.map((item) => (
-            item.label === 'Users & Guests' ? (
-              <a key={item.label} className="nav-item" href="/admin/users">
+            item.href || item.label === 'Users & Guests' ? (
+              <a key={item.label} className={`nav-item ${item.active ? 'active' : ''}`} href={item.href || '/admin/users'}>
                 <span className="nav-icon">{item.icon}</span>
                 <span>{item.label}</span>
               </a>
             ) : (
-              <button key={item.label} className={`nav-item ${item.active ? 'active' : ''}`}>
+              <button
+                key={item.label}
+                className={`nav-item ${item.active ? 'active' : ''}`}
+                type="button"
+                disabled
+                title={`${item.label} is unavailable until a backend API is provided.`}
+                aria-label={`${item.label}, unavailable until backend API support is added`}
+              >
                 <span className="nav-icon">{item.icon}</span>
                 <span>{item.label}</span>
                 {item.badge ? <span className="nav-badge">{item.badge}</span> : null}
@@ -257,10 +264,15 @@ function App() {
         <header className="topbar">
           <div className="search-wrap">
             <span className="search-icon">⌕</span>
-            <input placeholder="Search restaurants, owners, locations..." aria-label="Search" />
+            <input
+              placeholder="Search restaurants, owners, locations..."
+              aria-label="Search"
+              disabled
+              title="Search will be available when the dashboard API supports it."
+            />
           </div>
           <div className="topbar-actions">
-            <div className="date-pill">Apr 24, 2025 — Apr 30, 2025</div>
+            <div className="date-pill">{new Date().toLocaleDateString(undefined, { dateStyle: 'medium' })}</div>
             <div className="avatar-wrap">
               <div className="avatar">{displayName.slice(0, 1).toUpperCase()}</div>
               <div>
@@ -274,7 +286,7 @@ function App() {
 
         <p className="dashboard-demo-notice">
           {dashboardStats
-            ? 'Dashboard metrics include live API data. Registration, queue, restaurant and activity panels remain examples.'
+            ? 'Dashboard statistics are live where the API returned recognized fields. Unmatched figures, registration, queue, restaurant and activity panels remain examples.'
             : 'Overview figures and restaurant rows are static design examples, not live API data.'}
           {' '}User Management is connected to the backend.
           {dashboardStatsError && <span> Dashboard stats unavailable: {dashboardStatsError}</span>}
@@ -287,7 +299,14 @@ function App() {
                 <h1>Platform Overview</h1>
                 <p>Manage every restaurant, booking and subscription from one place.</p>
               </div>
-              <button className="primary-btn">+ Add Restaurant</button>
+              <button
+                className="primary-btn"
+                type="button"
+                disabled
+                title="Restaurant creation is unavailable until a backend API is provided."
+              >
+                + Add Restaurant
+              </button>
             </div>
 
             <div className="stats-grid">
@@ -308,7 +327,7 @@ function App() {
           <div className="side-panel">
             <div className="panel-header">
               <h3>Recent Registrations</h3>
-              <button>View All →</button>
+              <button type="button" disabled title="Registration management API is unavailable.">View All →</button>
             </div>
             <div className="registration-list">
               {registrations.map((item) => (
@@ -320,8 +339,8 @@ function App() {
                     <div className="item-time">{item.time}</div>
                   </div>
                   <div className="actions-row">
-                    <button className="approve-btn">Approve</button>
-                    <button className="reject-btn">Reject</button>
+                    <button className="approve-btn" type="button" disabled title="Registration approval API is unavailable.">Approve</button>
+                    <button className="reject-btn" type="button" disabled title="Registration rejection API is unavailable.">Reject</button>
                   </div>
                 </div>
               ))}
@@ -330,7 +349,7 @@ function App() {
             <div className="queue-box">
               <div className="panel-header tight">
                 <h3>Live Queue</h3>
-                <button>View All →</button>
+                <button type="button" disabled title="Queue monitoring API is unavailable.">View All →</button>
               </div>
               {queueEntries.map((item) => (
                 <div className="queue-item" key={item.name}>
@@ -409,12 +428,12 @@ function App() {
             <div className="table-header">
               <h3>Restaurant Management</h3>
               <div className="table-actions">
-                <input placeholder="Search restaurants..." aria-label="Search restaurants" />
+                <input placeholder="Search restaurants..." aria-label="Search restaurants" disabled title="Restaurant data is an illustrative example." />
                 <span className="table-pill">Status: All</span>
                 <span className="table-pill">Plan: All</span>
                 <span className="table-pill">City: All</span>
                 <span className="table-pill">Joined: All</span>
-                <button className="export-btn">Export CSV</button>
+                <button className="export-btn" type="button" disabled title="Restaurant data is an illustrative example.">Export CSV</button>
               </div>
             </div>
 
@@ -450,9 +469,9 @@ function App() {
                     <td>{restaurant.joined}</td>
                     <td><span className={`status-badge ${restaurant.status.toLowerCase()}`}>{restaurant.status}</span></td>
                     <td className="action-cell">
-                      <button>View</button>
-                      <button>Edit</button>
-                      <button className="more">⋯</button>
+                      <button type="button" disabled title="Restaurant details API is unavailable.">View</button>
+                      <button type="button" disabled title="Restaurant editing API is unavailable.">Edit</button>
+                      <button className="more" type="button" disabled title="Restaurant actions API is unavailable.">⋯</button>
                     </td>
                   </tr>
                 ))}
@@ -478,7 +497,7 @@ function App() {
             <div className="activity-card">
               <div className="panel-header">
                 <h3>Recent Admin Activity</h3>
-                <button>View All →</button>
+                <button type="button" disabled title="Admin activity API is unavailable.">View All →</button>
               </div>
               <div className="activity-list">
                 {recentActivity.map((item) => (

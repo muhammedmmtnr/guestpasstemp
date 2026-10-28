@@ -171,6 +171,7 @@ button {
 
 .main-panel {
   flex: 1;
+  min-width: 0;
   padding: 18px 18px 22px;
 }
 
@@ -680,7 +681,13 @@ button {
 
 .table-card {
   grid-column: 1 / 2;
+  min-width: 0;
   padding: 18px 16px 12px;
+  overflow-x: auto;
+}
+
+.table-card table {
+  min-width: 900px;
 }
 
 .table-header {
@@ -1307,6 +1314,54 @@ th {
   gap: 8px;
 }
 
+.user-management-create-form {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fbfdfc;
+}
+
+.user-management-create-form h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.user-management-create-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+}
+
+.user-management-create-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.user-management-create-fields input,
+.user-management-create-fields select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--white);
+  color: var(--text);
+}
+
+.user-management-success {
+  padding: 12px;
+  border: 1px solid #cce8d7;
+  border-radius: 10px;
+  color: #216d50;
+  background: #f0faf5;
+}
+
 .sign-in-card {
   max-width: 500px;
 }
@@ -1374,6 +1429,24 @@ th {
 
   .sidebar {
     width: 100%;
+    padding-bottom: 10px;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    margin: 0;
+    padding: 2px 2px 8px;
+    overscroll-behavior-x: contain;
+  }
+
+  .sidebar-nav > * {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .sidebar-footer {
+    display: none;
   }
 
   .topbar {
@@ -1384,6 +1457,10 @@ th {
   .stats-grid,
   .meta-row {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .dashboard-grid > * {
+    min-width: 0;
   }
 }
 
@@ -1424,5 +1501,35 @@ th {
 
   .user-management-pagination {
     justify-content: space-between;
+  }
+
+  .main-panel {
+    padding: 12px;
+  }
+
+  .topbar-actions {
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .avatar-wrap {
+    max-width: 100%;
+  }
+
+  .admin-signout {
+    margin-left: auto;
+  }
+
+  .section-header-row > * {
+    max-width: 100%;
+  }
+
+  .table-actions {
+    width: 100%;
+  }
+
+  .table-actions input {
+    min-width: 0;
+    width: 100%;
   }
 }
