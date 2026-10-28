@@ -1,0 +1,175 @@
+import assert from 'node:assert/strict';
+import { afterEach, test } from 'node:test';
+import {
+  adaptUserListResponse,
+  adminUsersApi,
+  ApiError,
+  authApi,
+  getUserRecordId,
+  isSensitiveField,
+  setApiAccessTokenProvider,
+  usersApi,
+} from './api.js';
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  setApiAccessTokenProvider(null);
+});
+
+function mockFetch(response = new Response(null, { status: 204 })) {
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), options });
+    return response;
+  };
+  return calls;
+}
+
+test('sign-up and sign-in use POST and pass request payloads unchanged', async () => {
+  const calls = mockFetch();
+  const signUpPayload = { suppliedBy: 'caller' };
+  const signInPayload = { suppliedBy: 'caller' };
+
+  await authApi.signUp(signUpPayload);
+  await authApi.signIn(signInPayload);
+
+  assert.deepEqual(calls.map(({ url, options }) => [url, options.method, options.body]), [
+    ['http://localhost:5173/api/auth/sign-up', 'POST', JSON.stringify(signUpPayload)],
+    ['http://localhost:5173/api/auth/sign-in', 'POST', JSON.stringify(signInPayload)],
+  ]);
+});
+
+test('profile updates use POST and uploads preserve FormData boundaries', async () => {
+  const calls = mockFetch();
+  const profilePayload = { suppliedBy: 'caller' };
+  const formData = new FormData();
+  formData.append('providedFieldName', new Blob(['image']), 'profile.png');
+
+  await usersApi.updateMyProfile(profilePayload);
+  await usersApi.updateMyProfileImage(formData);
+
+  assert.equal(calls[0].url, 'http://localhost:5173/api/users/me/profile');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.equal(calls[0].options.body, JSON.stringify(profilePayload));
+  assert.equal(calls[0].options.headers.get('content-type'), 'application/json');
+  assert.equal(calls[1].url, 'http://localhost:5173/api/users/me/profile-image');
+  assert.equal(calls[1].options.method, 'POST');
+  assert.equal(calls[1].options.body, formData);
+  assert.equal(calls[1].options.headers.has('content-type'), false);
+  assert.equal(calls[1].options.credentials, 'same-origin');
+});
+
+test('admin list uses the specified pagination defaults and filters', async () => {
+  const calls = mockFetch();
+
+  await adminUsersApi.list();
+  await adminUsersApi.list({ page: 3, limit: 10, accountType: 'provided-filter' });
+
+  assert.equal(
+    calls[0].url,
+    'http://localhost:5173/api/admin/users?page=1&limit=20&accountType=all',
+  );
+  assert.equal(
+    calls[1].url,
+    'http://localhost:5173/api/admin/users?page=3&limit=10&accountType=provided-filter',
+  );
+  assert.equal(calls[0].options.method, 'GET');
+  assert.throws(() => adminUsersApi.list({ page: 0 }), RangeError);
+});
+
+test('admin details, status, and deletion use the specified methods and encoded IDs', async () => {
+  const calls = mockFetch();
+  const statusPayload = { suppliedBy: 'caller' };
+
+  await adminUsersApi.get('user/id');
+  await adminUsersApi.updateStatus('user/id', statusPayload);
+  await adminUsersApi.delete('user/id');
+
+  assert.deepEqual(calls.map(({ url, options }) => [url, options.method]), [
+    ['http://localhost:5173/api/admin/users/user%2Fid', 'GET'],
+    ['http://localhost:5173/api/admin/users/user%2Fid/status', 'POST'],
+    ['http://localhost:5173/api/admin/users/user%2Fid', 'DELETE'],
+  ]);
+  assert.equal(calls[1].options.body, JSON.stringify(statusPayload));
+  assert.equal(calls.every(({ options }) => options.credentials === 'same-origin'), true);
+  assert.throws(() => adminUsersApi.get(''), TypeError);
+});
+
+test('API errors preserve backend messages and HTTP status codes', async () => {
+  mockFetch(new Response(JSON.stringify({ message: 'Permission denied', code: 'FORBIDDEN' }), {
+    status: 403,
+    headers: { 'content-type': 'application/json' },
+  }));
+
+  await assert.rejects(adminUsersApi.list(), (error) => (
+    error instanceof ApiError
+    && error.status === 403
+    && error.code === 'FORBIDDEN'
+    && error.message === 'Permission denied'
+  ));
+});
+
+test('API error messages redact bearer tokens and credential-like values', async () => {
+  mockFetch(new Response(JSON.stringify({
+    message: 'Bearer eyJhbGci.test.signature password=hunter2',
+  }), {
+    status: 401,
+    headers: { 'content-type': 'application/json' },
+  }));
+
+  await assert.rejects(adminUsersApi.list(), (error) => (
+    error instanceof ApiError
+    && !error.message.includes('eyJhbGci')
+    && !error.message.includes('hunter2')
+    && error.message.includes('[redacted')
+  ));
+});
+
+test('successful API responses reject unexpected non-JSON bodies', async () => {
+  mockFetch(new Response('<html>proxy warning</html>', {
+    status: 200,
+    headers: { 'content-type': 'text/html' },
+  }));
+
+  await assert.rejects(adminUsersApi.list(), (error) => (
+    error instanceof ApiError
+    && error.status === 200
+    && error.message === 'The API returned a non-JSON response.'
+  ));
+});
+
+test('protected requests resolve their bearer token from the configured provider', async () => {
+  const calls = mockFetch();
+  setApiAccessTokenProvider(async () => 'session-access-token');
+
+  await adminUsersApi.list();
+
+  assert.equal(calls[0].options.headers.get('authorization'), 'Bearer session-access-token');
+});
+
+test('user response adaptation supports the isolated assumed list envelopes', () => {
+  const topLevel = [{ id: '1' }];
+  const wrapped = { data: { users: [{ userId: '2' }], pagination: { total: 1 } } };
+
+  assert.deepEqual(adaptUserListResponse(topLevel), {
+    users: topLevel,
+    metadata: null,
+    responseKeys: [],
+  });
+  assert.deepEqual(adaptUserListResponse(wrapped), {
+    users: wrapped.data.users,
+    metadata: wrapped.data.pagination,
+    responseKeys: ['data'],
+  });
+  assert.equal(adaptUserListResponse({ unexpected: true }).users, null);
+});
+
+test('user identifiers are optional and sensitive fields can be excluded from display', () => {
+  assert.equal(getUserRecordId({ id: 17 }), '17');
+  assert.equal(getUserRecordId({ userId: 'abc' }), 'abc');
+  assert.equal(getUserRecordId({ email: 'person@example.test' }), null);
+  assert.equal(isSensitiveField('accessToken'), true);
+  assert.equal(isSensitiveField('email'), false);
+});
