@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   claimDemoRestaurant,
@@ -7,20 +7,18 @@ import {
   createRestaurant,
   defaultHours,
   getBookingByToken,
-  getDemoProfile,
-  getDemoQrId,
   getOwnedRestaurant,
   getPublicReview,
   getPublicQueueSummary,
   getRestaurantByQr,
   getSession,
+  getUserProfile,
   isDemoMode,
   joinQueue,
   listBookings,
   listQueueActivity,
   removeBooking,
   saveProfile,
-  signInWithGoogle,
   signInWithPassword,
   signOut,
   signUpWithPassword,
@@ -28,8 +26,10 @@ import {
   subscribeToAuth,
   subscribeToBookings,
   updateBookingStatus,
+  updateUserProfile,
   updateRestaurant,
   uploadRestaurantImage,
+  uploadUserProfileImage,
 } from './data'
 
 const adminNavigation = [
@@ -39,6 +39,7 @@ const adminNavigation = [
   { id: 'history', label: 'Bookings', icon: 'clock' },
   { id: 'analytics', label: 'Reports', icon: 'chart' },
   { id: 'settings', label: 'Restaurant settings', icon: 'settings' },
+  { id: 'account', label: 'Account profile', icon: 'user' },
 ]
 
 const statusLabels = { waiting: 'Waiting', notified: 'Called', seated: 'Seated', completed: 'Completed', cancelled: 'Cancelled' }
@@ -71,6 +72,7 @@ function Icon({ name, size = 20, className = '' }) {
     logout: <><path d="M10 17l5-5-5-5m5 5H3" /><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7" /></>,
     filter: <><path d="M4 6h16M7 12h10m-7 6h4" /></>,
     menu: <><path d="M4 6h16M4 12h16M4 18h16" /></>,
+    user: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
   }
   return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] || paths.check}</svg>
 }
@@ -405,20 +407,46 @@ function AuthPage({ onAuthenticated, onBack, onDemo }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [phone, setPhone] = useState('')
+  const [receiveWhatsAppUpdates, setReceiveWhatsAppUpdates] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const submissionInProgress = useRef(false)
 
   async function submitPassword(event) {
     event.preventDefault()
+    if (submissionInProgress.current) return
+
+    if (mode === 'signup') {
+      const phoneDigits = phone.replace(/\D/g, '')
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        setError('Enter a valid email address.')
+        return
+      }
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters.')
+        return
+      }
+      if (!name.trim()) {
+        setError('Enter your full name.')
+        return
+      }
+      if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+        setError('Enter a valid phone number.')
+        return
+      }
+    }
+
+    submissionInProgress.current = true
     setBusy(true); setError(''); setNotice('')
     try {
       if (mode === 'signup') {
-        const { user, session } = await signUpWithPassword(email, password, name)
+        const { user, session } = await signUpWithPassword(email, password, name, phone, receiveWhatsAppUpdates)
         if (session) await onAuthenticated(user)
         else {
           setMode('signin')
-          setNotice('Your account was created. Check your email to confirm your address, then sign in.')
+          setNotice('Your account was created. Please sign in to continue.')
         }
       } else {
         const user = await signInWithPassword(email, password)
@@ -426,35 +454,145 @@ function AuthPage({ onAuthenticated, onBack, onDemo }) {
       }
     }
     catch (caught) { setError(caught.message || 'Unable to authenticate. Please try again.') }
-    finally { setBusy(false) }
-  }
-
-  async function continueWithGoogle() {
-    setBusy(true); setError('')
-    try { await signInWithGoogle() }
-    catch (caught) { setError(caught.message || 'Google sign-in could not be started.') }
-    finally { setBusy(false) }
+    finally { submissionInProgress.current = false; setBusy(false) }
   }
 
   const isSignup = mode === 'signup'
-  return <main className="auth-layout"><div className="auth-showcase"><Brand /><div className="auth-showcase-copy"><span className="eyebrow">RESTAURANT OPERATIONS, MADE SIMPLE</span><h1>Give every guest a better wait.</h1><p>Bring your waitlist, guest updates, and service insights together in one calm, easy-to-use workspace.</p><div className="auth-showcase-stats"><span><strong>Live</strong> queue visibility</span><span><strong>QR</strong> guest check-ins</span><span><strong>Simple</strong> service analytics</span></div></div><span className="showcase-orbit orbit-one" /><span className="showcase-orbit orbit-two" /></div>
-    <section className="auth-card"><button className="back-link" onClick={onBack}><Icon name="back" size={18} /> Guest view</button><span className="eyebrow">{isDemoMode ? 'BROWSER DEMO' : 'RESTAURANT PORTAL'}</span><h2>{isSignup ? 'Create your account' : 'Welcome to GuestPass'}</h2><p>{isSignup ? 'Create an account to set up your restaurant workspace.' : 'Sign in to manage your restaurant and guest queue.'}</p><Notice type="success">{notice}</Notice><Notice>{error}</Notice>
+  return <main className="auth-layout"><div className="auth-showcase"><Brand /><div className="auth-showcase-copy"><span className="eyebrow">GUESTPASS ACCOUNT</span><h1>One account for your restaurant.</h1><p>Manage your owner profile and account preferences with the existing GuestPass API.</p><div className="auth-showcase-stats"><span><strong>Secure</strong> sign-in</span><span><strong>Profile</strong> management</span><span><strong>Direct</strong> API connection</span></div></div><span className="showcase-orbit orbit-one" /><span className="showcase-orbit orbit-two" /></div>
+    <section className="auth-card"><button className="back-link" onClick={onBack}><Icon name="back" size={18} /> Guest view</button><span className="eyebrow">{isDemoMode ? 'BROWSER DEMO' : 'RESTAURANT ACCOUNT'}</span><h2>{isSignup ? 'Create your account' : 'Welcome to GuestPass'}</h2><p>{isSignup ? 'Create an account to manage your owner profile.' : 'Sign in to manage your owner profile.'}</p><Notice type="success">{notice}</Notice><Notice>{error}</Notice>
       <form onSubmit={submitPassword} className="auth-form">
-        {isSignup && <label>Your name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Restaurant owner" autoComplete="name" maxLength={120} required /></label>}
+        {isSignup && <>
+          <label>Full name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Restaurant owner" autoComplete="name" maxLength={120} required /></label>
+          <label>Phone<input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+1 555 123 4567" autoComplete="tel" maxLength={30} pattern="\+?[0-9\s().-]{7,30}" title="Enter a valid phone number." required /></label>
+        </>}
         <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@restaurant.com" autoComplete="email" required /></label>
         <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={isSignup ? 'At least 6 characters' : 'Your password'} autoComplete={isSignup ? 'new-password' : 'current-password'} minLength={6} required /></label>
-        <Button type="submit" variant="primary" disabled={busy}>{busy ? <><span className="spinner" /> Please wait…</> : isSignup ? 'Create restaurant account' : 'Sign in'}</Button>
+        {isSignup && <label className="setting-toggle"><span><strong>WhatsApp updates</strong><small>Receive GuestPass updates on WhatsApp.</small></span><input type="checkbox" checked={receiveWhatsAppUpdates} onChange={(event) => setReceiveWhatsAppUpdates(event.target.checked)} /></label>}
+        <Button type="submit" variant="primary" disabled={busy}>{busy ? <><span className="spinner" /> Please wait…</> : isSignup ? 'Create account' : 'Sign in'}</Button>
       </form>
-      <div className="auth-divider"><span>or continue with</span></div><Button className="google-login" onClick={continueWithGoogle} disabled={busy}><GoogleMark /> Continue with Google</Button>
       <p className="auth-switch">{isSignup ? 'Already have an account?' : 'New to GuestPass?'} <button type="button" onClick={() => { setMode(isSignup ? 'signin' : 'signup'); setError(''); setNotice('') }}>{isSignup ? 'Sign in' : 'Create an account'}</button></p>
       {isDemoMode && <div className="demo-login"><div><strong>Try the dashboard</strong><p>Demo changes are saved only in this browser.</p></div><Button onClick={onDemo}>Explore demo workspace <Icon name="arrow" size={16} /></Button></div>}
-      {!isDemoMode && <p className="auth-security"><Icon name="check" size={15} /> Your account is securely managed by Supabase.</p>}
+      {!isDemoMode && <p className="auth-security"><Icon name="check" size={15} /> Authentication requests use the configured secure API connection.</p>}
     </section>
   </main>
 }
 
-function GoogleMark() {
-  return <svg className="google-mark" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z" /><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.75 7.18l7.73 6C44.43 38.05 46.98 31.95 46.98 24.55Z" /><path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19Z" /><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.15 1.45-4.92 2.3-8.18 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z" /></svg>
+function getAccountFields(user) {
+  const profile = user?.profile || {}
+  return {
+    fullName: profile.full_name || profile.name || user?.fullName || user?.name || user?.user_metadata?.fullName || user?.user_metadata?.name || '',
+    phone: profile.phone || user?.phone || '',
+    receiveWhatsAppUpdates: profile.receive_whatsapp_updates ?? user?.receiveWhatsAppUpdates ?? false,
+    imageUrl: profile.profile_image_url || profile.profileImageUrl || profile.avatar_url || user?.profileImageUrl || '',
+  }
+}
+
+function AccountProfileForm({ user, onSave, onUpload }) {
+  const initialFields = getAccountFields(user)
+  const [fields, setFields] = useState(initialFields)
+  const [busy, setBusy] = useState(false)
+  const [imageBusy, setImageBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [previewUrl, setPreviewUrl] = useState('')
+
+  useEffect(() => {
+    setFields(getAccountFields(user))
+  }, [user])
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
+
+  async function submit(event) {
+    event.preventDefault()
+    const phoneDigits = fields.phone.replace(/\D/g, '')
+    if (!fields.fullName.trim()) {
+      setError('Enter your full name.')
+      return
+    }
+    if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+      setError('Enter a valid phone number.')
+      return
+    }
+
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const updatedUser = await onSave(fields)
+      setFields(getAccountFields(updatedUser))
+      setNotice('Account profile updated.')
+    } catch (caught) {
+      setError(caught.message || 'Account profile could not be updated.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function chooseImage(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setError(''); setNotice('')
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+      setError('Choose a JPEG, PNG, WebP, or GIF image.')
+      event.target.value = ''
+      return
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      setError('Images must be smaller than 4 MB.')
+      event.target.value = ''
+      return
+    }
+
+    setPreviewUrl(URL.createObjectURL(file))
+    setImageBusy(true)
+    try {
+      const updatedUser = await onUpload(file)
+      setFields(getAccountFields(updatedUser))
+      setPreviewUrl('')
+      setNotice('Profile image uploaded.')
+    } catch (caught) {
+      setPreviewUrl('')
+      setError(caught.message || 'Profile image could not be uploaded.')
+    } finally {
+      setImageBusy(false)
+      event.target.value = ''
+    }
+  }
+
+  const imageUrl = previewUrl || fields.imageUrl
+  return <form className="settings-form" onSubmit={submit}>
+    <Notice>{error}</Notice>
+    <Notice type="success">{notice}</Notice>
+    <section className="panel settings-section">
+      <div className="panel-heading"><div><h2>Account details</h2><p>Manage the personal details associated with your GuestPass account.</p></div></div>
+      <label>Email address<input type="email" value={user?.email || ''} readOnly /></label>
+      <label>Full name<input value={fields.fullName} onChange={(event) => setFields({ ...fields, fullName: event.target.value })} maxLength={120} required /></label>
+      <label>Phone<input type="tel" value={fields.phone} onChange={(event) => setFields({ ...fields, phone: event.target.value })} maxLength={30} pattern="\+?[0-9\s().-]{7,30}" title="Enter a valid phone number." required /></label>
+      <label className="setting-toggle"><span><strong>WhatsApp updates</strong><small>Receive GuestPass updates on WhatsApp.</small></span><input type="checkbox" checked={fields.receiveWhatsAppUpdates} onChange={(event) => setFields({ ...fields, receiveWhatsAppUpdates: event.target.checked })} /></label>
+      <div className="profile-image-upload">
+        <label>Profile image<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={chooseImage} disabled={imageBusy} /><small>JPEG, PNG, WebP, or GIF. Maximum 4 MB.</small></label>
+        {imageUrl && <img className="logo-preview" src={imageUrl} alt={previewUrl ? 'Selected profile image preview' : 'Current profile image'} />}
+        {imageBusy && <small role="status">Uploading image…</small>}
+      </div>
+    </section>
+    <div className="settings-save"><Button type="submit" variant="primary" disabled={busy || imageBusy}>{busy ? 'Saving profile…' : 'Save account profile'}</Button></div>
+  </form>
+}
+
+function AccountProfilePage({ user, onSave, onUpload, onSignOut, onBack, standalone = false }) {
+  const content = <>
+    {!standalone && <PageTitle eyebrow="ACCOUNT" title="Account profile" description="Manage your personal information and profile image." />}
+    {standalone && <><button className="back-link" onClick={onBack}><Icon name="back" size={18} /> Guest view</button><span className="eyebrow">GUESTPASS ACCOUNT</span><h1>Your profile</h1><p className="page-intro">Manage your personal information and profile image.</p></>}
+    <AccountProfileForm user={user} onSave={onSave} onUpload={onUpload} />
+  </>
+
+  if (!standalone) return content
+  return <main className="setup-layout"><div className="setup-card account-profile-card">
+    <div className="account-profile-heading"><Brand /><Button onClick={onSignOut}>Sign out</Button></div>
+    {content}
+  </div></main>
 }
 
 function SetupRestaurantPage({ user, onCreated, onBack }) {
@@ -687,34 +825,45 @@ function App() {
     async function initialize() {
       try {
         const bookingToken = query.get('booking')
-        const restaurantQr = query.get('restaurant') || getDemoQrId()
-        const [foundRestaurant, session] = await Promise.all([
-          getRestaurantByQr(restaurantQr),
-          getSession(),
-        ])
+        const restaurantQr = query.get('restaurant')
+        const session = await getSession()
         if (!active) return
-        setGuestRestaurant(foundRestaurant)
-        if (foundRestaurant) setQueueSummary(await getPublicQueueSummary(foundRestaurant.qr_id))
-        if (bookingToken) {
-          const foundBooking = await getBookingByToken(bookingToken)
-          if (active) { setBooking(foundBooking); setRoute('guest-status') }
-        }
-        if (session?.user) {
-          setUser(session.user)
-          const owned = await getOwnedRestaurant(session.user.id)
-          if (active && owned) { setRestaurant(owned); await loadBookings(owned.id) }
-          else if (active) setRoute('setup')
-        } else if (isDemoMode) {
-          const profile = getDemoProfile()
-          if (profile) {
-            setUser(profile)
-            const owned = await getOwnedRestaurant(profile.id)
-            if (active && owned) { setRestaurant(owned); await loadBookings(owned.id) }
-            else if (active) setRoute('setup')
+
+        if (restaurantQr) {
+          try {
+            const foundRestaurant = await getRestaurantByQr(restaurantQr)
+            if (!active) return
+            setGuestRestaurant(foundRestaurant)
+            if (foundRestaurant) setQueueSummary(await getPublicQueueSummary(foundRestaurant.qr_id))
+          } catch (caught) {
+            if (active) setPageError(caught.message || 'Restaurant details could not be loaded.')
           }
         }
+
+        if (bookingToken) {
+          try {
+            const foundBooking = await getBookingByToken(bookingToken)
+            if (active) { setBooking(foundBooking); setRoute('guest-status') }
+          } catch (caught) {
+            if (active) {
+              setPageError(caught.message || 'Booking status could not be loaded.')
+              setRoute('guest-home')
+            }
+          }
+        }
+        if (session?.user) {
+          const currentUser = supabase ? session.user : await getUserProfile()
+          if (!active) return
+          setUser(currentUser)
+          const owned = await getOwnedRestaurant(currentUser.id)
+          if (active && owned) { setRestaurant(owned); await loadBookings(owned.id) }
+          else if (active) setRoute(!supabase && !isDemoMode ? 'account' : 'setup')
+        }
       } catch (caught) {
-        if (active) setPageError(caught.message || 'GuestPass could not load this page.')
+        if (active) {
+          setPageError(caught.message || 'GuestPass could not load this page.')
+          if (caught.status === 401 || caught.status === 403) setRoute('portal')
+        }
       } finally { if (active) setLoading(false) }
     }
     initialize()
@@ -725,6 +874,16 @@ function App() {
     setUser(session?.user || null)
     if (!session?.user) { setRestaurant(null); setBookings([]); setActivity([]) }
   }), [])
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setUser(null); setRestaurant(null); setBookings([]); setActivity([])
+      setPageError('Your session expired. Please sign in again.')
+      setRoute('portal')
+    }
+    window.addEventListener('guestpass:unauthorized', handleUnauthorized)
+    return () => window.removeEventListener('guestpass:unauthorized', handleUnauthorized)
+  }, [])
 
   useEffect(() => {
     if (!restaurant?.id) return undefined
@@ -751,12 +910,24 @@ function App() {
   const queueCount = Number(queueSummary.queue_count) || 0
 
   async function authenticated(userData) {
-    setUser(userData)
-    const profileName = userData.user_metadata?.name || userData.user_metadata?.full_name || ''
-    await saveProfile(userData.id, { name: profileName, role: 'restaurant' })
-    const owned = await getOwnedRestaurant(userData.id)
+    const currentUser = supabase ? userData : await getUserProfile()
+    setUser(currentUser)
+    const owned = await getOwnedRestaurant(currentUser.id)
     if (owned) { setRestaurant(owned); await loadBookings(owned.id); navigate('dashboard') }
-    else navigate('setup')
+    else navigate(!supabase && !isDemoMode ? 'account' : 'setup')
+  }
+
+  async function saveAccountProfile(fields) {
+    const updatedUser = await updateUserProfile(fields)
+    setUser(updatedUser)
+    return updatedUser
+  }
+
+  async function uploadAccountProfileImage(file) {
+    await uploadUserProfileImage(file)
+    const updatedUser = await getUserProfile()
+    setUser(updatedUser)
+    return updatedUser
   }
 
   async function exploreDemo() {
@@ -816,10 +987,11 @@ function App() {
 
   if (loading) return <div className="app-loading"><span className="spinner" /><span>Loading GuestPass…</span></div>
 
-  if (route === 'guest-home') return <GuestLanding restaurant={guestRestaurant} queueCount={queueCount} onJoin={() => guestRestaurant ? navigate('join') : navigate('portal')} onPortal={() => navigate(user && restaurant ? 'dashboard' : 'portal')} error={pageError} />
+  if (route === 'guest-home') return <GuestLanding restaurant={guestRestaurant} queueCount={queueCount} onJoin={() => guestRestaurant ? navigate('join') : navigate('portal')} onPortal={() => navigate(user ? restaurant ? 'dashboard' : 'account' : 'portal')} error={pageError} />
   if (route === 'join' && guestRestaurant) return <QueueJoinPage restaurant={guestRestaurant} onBack={() => navigate('guest-home')} onJoined={handleJoin} />
   if (route === 'guest-status') return <GuestBookingPage booking={booking} onBack={() => navigate('guest-home')} onRefresh={setBooking} />
   if (route === 'portal') return <AuthPage onAuthenticated={authenticated} onBack={() => navigate('guest-home')} onDemo={exploreDemo} />
+  if (route === 'account' && user && !restaurant) return <AccountProfilePage user={user} onSave={saveAccountProfile} onUpload={uploadAccountProfileImage} onSignOut={handleSignOut} onBack={() => navigate('guest-home')} standalone />
   if (route === 'setup' && user) return <SetupRestaurantPage user={user} onCreated={createWorkspace} onBack={() => navigate('portal')} />
 
   if (adminNavigation.some((item) => item.id === route)) {
@@ -832,9 +1004,10 @@ function App() {
       {route === 'history' && <HistoryPage bookings={bookings} activity={activity} onAction={actOnBooking} busyId={busyBooking} />}
       {route === 'analytics' && <AnalyticsPage bookings={bookings} restaurant={restaurant} />}
       {route === 'settings' && <SettingsPage restaurant={restaurant} onSave={saveRestaurantSettings} userId={user.id} />}
+      {route === 'account' && <AccountProfilePage user={user} onSave={saveAccountProfile} onUpload={uploadAccountProfileImage} />}
     </AdminShell>
   }
-  return <GuestLanding restaurant={guestRestaurant} queueCount={queueCount} onJoin={() => navigate('join')} onPortal={() => navigate('portal')} error={pageError} />
+  return <GuestLanding restaurant={guestRestaurant} queueCount={queueCount} onJoin={() => navigate('join')} onPortal={() => navigate(user ? restaurant ? 'dashboard' : 'account' : 'portal')} error={pageError} />
 }
 
 export default App

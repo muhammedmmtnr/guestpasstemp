@@ -1,6 +1,6 @@
 # GuestPass
 
-Responsive restaurant queue and guest check-in app built with React, Vite, and Supabase.
+Responsive restaurant queue and guest check-in app built with React and Vite. The existing GuestPass REST API currently supports account authentication and profile management only. Restaurant and queue operations are not connected to this API.
 
 ## Run locally
 
@@ -9,30 +9,29 @@ npm install
 npm run dev
 ```
 
-Without Supabase credentials, GuestPass opens in **browser demo mode**. Demo workspace and queue changes persist in this browser's local storage and are not shared across devices.
+Set `VITE_API_URL` in `.env` to the current backend base URL. `.env.example` contains the supplied URL; restart Vite after changing it. In development, Vite proxies `/api` requests to that URL. In production, the client sends requests directly to `VITE_API_URL`.
 
-## Connect Supabase
+Every request includes `ngrok-skip-browser-warning: true`. The shared API client adds JSON headers, injects a stored bearer token, parses JSON responses, normalizes errors, and times out requests after 15 seconds. A 401/403 clears the client session and redirects to sign-in. Sessions are held in tab-scoped `sessionStorage`; no refresh-token or server-side logout endpoint is documented.
 
-1. Create a Supabase project and copy `.env.example` to `.env.local`.
-2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to the project's public URL and anon/publishable key. Never put a service-role key in a Vite environment variable.
-3. Apply the SQL migrations in `supabase/migrations/` in filename order, using the Supabase CLI or SQL editor.
-4. In Supabase Authentication, enable email/password sign-in and configure email confirmation if required.
-5. To enable Google login, configure the Google provider credentials in Supabase Authentication → Providers → Google, then add the local and production app URLs to Supabase's allowed redirect URLs.
-6. Restart Vite after changing environment variables.
+## Known API routes
 
-The restaurant console supports email/password registration and login, plus Google OAuth when Supabase is configured. Without Supabase credentials, the portal remains in browser demo mode. A Postman collection for Supabase Auth REST API testing is available at `postman/GuestPass-Supabase-Auth.postman_collection.json`; set the collection variables before using it. Google OAuth begins in Postman but must be completed in a browser.
+These are the routes currently provided by the backend, based on the workspace integration and the route list supplied by the backend owner. The tunnel was offline during the latest verification attempt (`ERR_NGROK_3200`), so current response details could not be re-confirmed.
 
-## Test authentication with Postman
+| Method | Path | Auth | Request |
+|---|---|---|---|
+| GET | `/api/health` | None | No body |
+| POST | `/api/auth/sign-up` | None | `email`, `password`, `fullName`, `phone`, `receiveWhatsAppUpdates` |
+| POST | `/api/auth/sign-in` | None | `email`, `password` |
+| POST | `/api/users/me/profile` | Bearer token | `{}` to load; `fullName`, `phone`, `receiveWhatsAppUpdates` to update |
+| POST | `/api/users/me/profile-image` | Bearer token | Multipart `file` |
 
-Import `postman/GuestPass-Supabase-Auth.postman_collection.json` and set `supabase_url`, `supabase_anon_key`, `email`, and `password` in a Postman environment or collection variables. Run **Sign up with email and password** (confirm the email first if email confirmation is enabled), then **Sign in with email and password**. The collection saves returned access and refresh tokens for the current environment so you can run **Get current user**, **Refresh session**, and **Sign out**.
+Sign-up/sign-in responses are expected to contain a user and, when authenticated, a session/access token. Profile requests are expected to return `data.user`. Profile image uploads accept JPEG, PNG, WebP, or GIF; the frontend enforces a 4 MB limit. Exact response schemas and the backend's upload-size limit still need live confirmation.
 
-The migrations create profiles, restaurants, bookings, idempotent queue-join RPCs, public restaurant and queue-summary RPCs, queue activity and in-app notification records, Row Level Security policies, realtime publication for restaurant booking updates, and the public restaurant image bucket. Public visitors can read only the restaurant fields and aggregate queue count returned by the public RPCs; guest booking details are accessed only through the booking's private access token.
+## Features awaiting backend routes
 
-## Queue and notification behavior
+No routes are currently provided or confirmed for restaurant lookup/workspace/settings/media, queue summaries, booking lists or creation, booking status/cancellation, queue activity, or guest reviews. Those screens/actions do not fall back to local demo data or Supabase; they report that the feature is unavailable until the API exposes the needed routes.
 
-Guest bookings are created through the `join_queue` database function, which validates the restaurant state and capacity, serializes capacity checks, and uses a request id to prevent duplicate submissions when a request is retried. Restaurant queue updates use Supabase Realtime. Public queue counts and each guest's token-scoped booking status are refreshed periodically, so calling or seating a guest is reflected without exposing other guest records.
-
-The guest status page shows the queue token, parties ahead, estimated wait, booking details, and a live status timeline. When the restaurant calls or seats a guest, polling automatically updates the page to the table-ready or seated view, including the assigned table, status time, directions, and available contact actions. The seated view lets the guest submit a 1–5 star rating tied to their booking token. Migrations `202610260003_restaurant_menu_url.sql` and `202610260004_guest_reviews.sql` add an optional public HTTPS menu link and token-authorized restaurant ratings. Apply all migrations in filename order. Guest booking status is polled every 10 seconds; the page does not imitate phone hardware or include device status bars. A configured restaurant WhatsApp number enables a guest-initiated click-to-chat link; automated SMS, email, or WhatsApp notifications still require a separately configured provider and server-side function.
+No WebSocket or SSE endpoint has been confirmed. Queue live updates therefore cannot be enabled yet. The existing `postman/GuestPass-Supabase-Auth.postman_collection.json` and SQL migrations are legacy Supabase assets and do not describe the current REST API.
 
 ## Production checks
 
@@ -40,4 +39,4 @@ The guest status page shows the queue token, parties ahead, estimated wait, book
 npm run build
 ```
 
-Before launch, configure Supabase email delivery and Google OAuth, review the SQL policies for your project, add a production domain and monitoring, and test the complete auth and guest flows against your own Supabase project.
+Never put passwords, tokens, or service credentials in source control. The `.env` file is ignored by Git.
