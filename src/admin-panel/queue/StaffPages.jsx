@@ -590,7 +590,7 @@ function RestaurantSetupPage({ memberships, onCreated, onSignOut }) {
         </div>
         <p className="staff-eyebrow">Restaurant workspace</p>
         <h1>{memberships.length ? 'Add a restaurant' : 'Set up your restaurant'}</h1>
-        <p>Create a restaurant and become its first owner. Your account is managed by Supabase Auth.</p>
+        <p>Create a restaurant and become its first owner. Your account uses GuestPass secure sign-in.</p>
         <form className="staff-form" onSubmit={handleSubmit}>
           <label><span>Restaurant name</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={120} required /></label>
           <label><span>Restaurant URL</span><div className="staff-slug-input"><span>/r/</span><input value={slug} onChange={(event) => setSlug(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))} maxLength={80} required /></div></label>

@@ -1,6 +1,6 @@
-import { apiRequest } from './services/api'
+import { authService, getAuthUser, getUserRole, pickAccessToken } from './services/auth.js'
+import { profileService } from './services/profile.js'
 
-export const supabase = null
 export const isDemoMode = false
 
 const AUTH_STORAGE_KEY = 'guestpass.auth.v1'
@@ -91,43 +91,27 @@ function writeStoredSession(session) {
 }
 
 function requireQueueApi(feature) {
-  if (supabase || isDemoMode) return
+  if (isDemoMode) return
   throw new Error(`${feature} is unavailable because the live API does not currently provide queue or restaurant endpoints.`)
 }
 
 function normalizeAuthResponse(payload) {
-  const data = payload?.data ?? payload
-  const account = data?.user ?? data?.account ?? data?.profile ?? data?.member ?? data?.restaurant ?? null
-  const session = data?.session ?? data
-  const accessToken = session?.access_token ?? session?.accessToken ?? data?.access_token ?? data?.accessToken ?? data?.token ?? null
-  const refreshToken = session?.refresh_token ?? session?.refreshToken ?? data?.refresh_token ?? data?.refreshToken ?? null
-  const user = account && typeof account === 'object' ? account : (data?.user ?? null)
+  const user = getAuthUser(payload)
+  const accessToken = pickAccessToken(payload)
 
   return {
     user,
     access_token: accessToken,
-    refresh_token: refreshToken,
     token: accessToken,
-    session: {
-      ...(session && typeof session === 'object' ? session : {}),
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    },
+    role: getUserRole(user),
   }
 }
 
 function persistAuthSession(payload) {
   const auth = normalizeAuthResponse(payload)
   const isAuthenticated = Boolean(auth.user && auth.access_token)
-  const session = {
-    user: auth.user,
-    access_token: auth.access_token,
-  }
-  if (isAuthenticated) {
-    writeStoredSession(session)
-  } else {
-    writeStoredSession(null)
-  }
+  if (isAuthenticated) writeStoredSession(auth)
+  else writeStoredSession(null)
   return { ...auth, isAuthenticated }
 }
 
@@ -192,22 +176,11 @@ export function getSlug(name) {
 }
 
 export async function getRestaurantByQr(qrId) {
-  if (supabase) {
-    const { data, error } = await supabase.rpc('get_public_restaurant', { p_qr_id: qrId })
-    if (error) throw error
-    return Array.isArray(data) ? data[0] ?? null : data
-  }
   requireQueueApi('Restaurant lookup')
   return getDemoRestaurants().find((restaurant) => restaurant.qr_id === qrId || restaurant.slug === qrId) ?? null
 }
 
 export async function getPublicQueueSummary(qrId) {
-  if (supabase) {
-    const { data, error } = await supabase.rpc('get_public_queue_summary', { p_qr_id: qrId })
-    if (error) throw error
-    return (Array.isArray(data) ? data[0] : data) ?? { queue_count: 0, avg_service_minutes: 5 }
-  }
-
   const restaurant = await getRestaurantByQr(qrId)
   if (!restaurant) throw new Error('We could not find this restaurant.')
   const queueCount = getDemoBookings().filter((booking) => (
@@ -217,12 +190,6 @@ export async function getPublicQueueSummary(qrId) {
 }
 
 export async function getOwnedRestaurant(userId) {
-  if (supabase) {
-    const { data, error } = await supabase.from('restaurants').select('*').eq('owner_id', userId).maybeSingle()
-    if (error) throw error
-    return data
-  }
-
   if (!isDemoMode) return null
   return getDemoRestaurants().find((restaurant) => restaurant.owner_id === userId) ?? null
 }
@@ -245,12 +212,6 @@ export async function createRestaurant(userId, fields) {
     opening_hours: defaultHours,
   }
 
-  if (supabase) {
-    const { data, error } = await supabase.from('restaurants').insert(restaurant).select().single()
-    if (error) throw error
-    return data
-  }
-
   if (!isDemoMode) throw new Error('Restaurant workspace creation is not available through the configured backend API.')
 
   const saved = { ...demoRestaurant, ...restaurant, id: crypto.randomUUID(), qr_id: crypto.randomUUID(), created_at: new Date().toISOString() }
@@ -263,12 +224,6 @@ export async function updateRestaurant(id, updates) {
     ...updates,
     ...(Object.hasOwn(updates, 'menu_url') ? { menu_url: updates.menu_url?.trim() || null } : {}),
   }
-  if (supabase) {
-    const { data, error } = await supabase.from('restaurants').update(normalizedUpdates).eq('id', id).select().single()
-    if (error) throw error
-    return data
-  }
-
   if (!isDemoMode) throw new Error('Restaurant settings are not available through the configured backend API.')
 
   const restaurants = getDemoRestaurants()
@@ -284,15 +239,6 @@ export async function uploadRestaurantImage(file, userId, kind) {
     throw new Error('Choose a JPEG, PNG, WebP, or GIF image.')
   }
   if (file.size > 4 * 1024 * 1024) throw new Error('Images must be smaller than 4 MB.')
-  if (supabase) {
-    const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-    const path = `${userId}/${kind}-${crypto.randomUUID()}.${extension}`
-    const { error } = await supabase.storage.from('restaurant-media').upload(path, file, { upsert: true, contentType: file.type })
-    if (error) throw error
-    const { data } = supabase.storage.from('restaurant-media').getPublicUrl(path)
-    return data.publicUrl
-  }
-
   if (!isDemoMode) throw new Error('Restaurant logo and cover uploads are not available through the configured backend API.')
 
   return new Promise((resolve, reject) => {
@@ -304,25 +250,13 @@ export async function uploadRestaurantImage(file, userId, kind) {
 }
 
 export async function listBookings(restaurantId) {
-  let records
-  if (supabase) {
-    const { data, error } = await supabase.from('bookings').select('*').eq('restaurant_id', restaurantId).order('joined_at', { ascending: true })
-    if (error) throw error
-    records = data
-  } else {
-    requireQueueApi('Queue bookings')
-    records = getDemoBookings().filter((booking) => booking.restaurant_id === restaurantId).sort((a, b) => a.joined_at.localeCompare(b.joined_at))
-  }
+  requireQueueApi('Queue bookings')
+  const records = getDemoBookings()
+    .filter((booking) => booking.restaurant_id === restaurantId)
+    .sort((a, b) => a.joined_at.localeCompare(b.joined_at))
 
   let position = 0
-  const restaurants = isDemoMode ? getDemoRestaurants() : null
-  let serviceMinutes = 5
-  if (restaurants) serviceMinutes = restaurants.find((restaurant) => restaurant.id === restaurantId)?.avg_service_minutes || serviceMinutes
-  else {
-    const { data, error } = await supabase.from('restaurants').select('avg_service_minutes').eq('id', restaurantId).single()
-    if (error) throw error
-    serviceMinutes = data.avg_service_minutes
-  }
+  const serviceMinutes = getDemoRestaurants().find((restaurant) => restaurant.id === restaurantId)?.avg_service_minutes || 5
   return records.map((booking) => {
     if (!['waiting', 'notified'].includes(booking.status)) return booking
     position += 1
@@ -331,16 +265,6 @@ export async function listBookings(restaurantId) {
 }
 
 export async function listQueueActivity(restaurantId) {
-  if (supabase) {
-    const { data, error } = await supabase.from('queue_activity')
-      .select('id, booking_id, event_type, from_status, to_status, message, created_at')
-      .eq('restaurant_id', restaurantId)
-      .order('created_at', { ascending: false })
-      .limit(50)
-    if (error) throw error
-    return data
-  }
-
   requireQueueApi('Queue activity')
   return readStorage(ACTIVITY_KEY, [])
     .filter((activity) => activity.restaurant_id === restaurantId)
@@ -349,19 +273,6 @@ export async function listQueueActivity(restaurantId) {
 }
 
 export async function joinQueue(restaurantId, details) {
-  if (supabase) {
-    const { data, error } = await supabase.rpc('join_queue', {
-      p_qr_id: restaurantId,
-      p_guest_name: details.name.trim(),
-      p_phone: details.phone.trim() || null,
-      p_party_size: details.partySize,
-      p_table_preference: details.preference,
-      p_whatsapp: details.whatsapp,
-      p_request_id: details.requestId,
-    })
-    if (error) throw error
-    return Array.isArray(data) ? data[0] : data
-  }
   requireQueueApi('Joining the queue')
   const restaurant = await getRestaurantByQr(restaurantId)
   if (!restaurant) throw new Error('We could not find this restaurant. Check the QR code and try again.')
@@ -409,11 +320,6 @@ export async function joinQueue(restaurantId, details) {
 }
 
 export async function getBookingByToken(token) {
-  if (supabase) {
-    const { data, error } = await supabase.rpc('get_public_booking', { p_access_token: token })
-    if (error) throw error
-    return Array.isArray(data) ? data[0] ?? null : data
-  }
   requireQueueApi('Booking status')
   const booking = getDemoBookings().find((item) => item.guest_access_token === token)
   if (!booking) return null
@@ -432,11 +338,6 @@ export async function getBookingByToken(token) {
 }
 
 export async function getPublicReview(token) {
-  if (supabase) {
-    const { data, error } = await supabase.rpc('get_public_review', { p_access_token: token })
-    if (error) throw error
-    return Array.isArray(data) ? data[0] ?? null : data
-  }
   requireQueueApi('Guest reviews')
   const booking = getDemoBookings().find((item) => item.guest_access_token === token)
   if (!booking) return null
@@ -446,14 +347,6 @@ export async function getPublicReview(token) {
 export async function submitPublicReview(token, rating) {
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
     throw new Error('Choose a rating from 1 to 5 stars.')
-  }
-  if (supabase) {
-    const { data, error } = await supabase.rpc('submit_public_review', {
-      p_access_token: token,
-      p_rating: rating,
-    })
-    if (error) throw error
-    return Array.isArray(data) ? data[0] : data
   }
   requireQueueApi('Guest reviews')
   const booking = getDemoBookings().find((item) => item.guest_access_token === token)
@@ -470,26 +363,13 @@ export async function submitPublicReview(token, rating) {
 }
 
 export async function cancelBookingByToken(token) {
-  if (supabase) {
-    const { data, error } = await supabase.rpc('cancel_public_booking', { p_access_token: token })
-    if (error) throw error
-    return Array.isArray(data) ? data[0] : data
-  }
+  requireQueueApi('Queue cancellation')
   const booking = await getBookingByToken(token)
   if (!booking || booking.status !== 'waiting') throw new Error('This queue entry can no longer be cancelled.')
   return updateBookingStatus(booking.id, 'cancelled')
 }
 
 export async function updateBookingStatus(bookingId, status, tableNumber = null) {
-  if (supabase) {
-    const { data, error } = await supabase.rpc('transition_booking', {
-      p_booking_id: bookingId,
-      p_status: status,
-      p_table_number: tableNumber,
-    })
-    if (error) throw error
-    return Array.isArray(data) ? data[0] : data
-  }
   requireQueueApi('Queue status changes')
   const bookings = getDemoBookings()
   let updatedBooking = null
@@ -525,11 +405,6 @@ export async function updateBookingStatus(bookingId, status, tableNumber = null)
 }
 
 export async function removeBooking(bookingId) {
-  if (supabase) {
-    const { error } = await supabase.from('bookings').delete().eq('id', bookingId)
-    if (error) throw error
-    return
-  }
   requireQueueApi('Removing queue bookings')
   const bookings = getDemoBookings()
   const booking = bookings.find((item) => item.id === bookingId)
@@ -539,16 +414,7 @@ export async function removeBooking(bookingId) {
 }
 
 export async function signInWithPassword(email, password) {
-  if (supabase) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-    if (error) throw error
-    return data.user
-  }
-
-  const payload = await apiRequest('/api/auth/sign-in', {
-    method: 'POST',
-    body: JSON.stringify({ email: email.trim(), password }),
-  })
+  const payload = await authService.signIn({ email: email.trim(), password })
   const auth = persistAuthSession(payload)
   if (!auth.isAuthenticated) throw new Error('The server did not return a valid authenticated session.')
   return auth.user
@@ -563,19 +429,7 @@ function getApiUser(payload) {
 }
 
 export async function getUserProfile() {
-  if (supabase) {
-    const { data: authData, error: authError } = await supabase.auth.getUser()
-    if (authError) throw authError
-    if (!authData.user) throw new Error('Your session has expired. Please sign in again.')
-    const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', authData.user.id).maybeSingle()
-    if (error) throw error
-    return { ...authData.user, ...(profile || {}) }
-  }
-
-  const payload = await apiRequest('/api/users/me/profile', {
-    method: 'POST',
-    body: JSON.stringify({}),
-  })
+  const payload = await profileService.getMyProfile({ authMode: 'user' })
   return getApiUser(payload)
 }
 
@@ -586,38 +440,7 @@ export async function updateUserProfile({ fullName, phone, receiveWhatsAppUpdate
     receiveWhatsAppUpdates: Boolean(receiveWhatsAppUpdates),
   }
 
-  if (supabase) {
-    const { data: authData, error: authError } = await supabase.auth.getUser()
-    if (authError) throw authError
-    if (!authData.user) throw new Error('Your session has expired. Please sign in again.')
-    const { data: updatedAuth, error: updateError } = await supabase.auth.updateUser({
-      data: {
-        name: normalized.fullName,
-        fullName: normalized.fullName,
-        phone: normalized.phone,
-        receiveWhatsAppUpdates: normalized.receiveWhatsAppUpdates,
-      },
-    })
-    if (updateError) throw updateError
-    const profile = await saveProfile(authData.user.id, {
-      name: normalized.fullName,
-      phone: normalized.phone,
-      role: 'restaurant',
-    })
-    return {
-      ...updatedAuth.user,
-      ...profile,
-      user_metadata: {
-        ...updatedAuth.user.user_metadata,
-        receiveWhatsAppUpdates: normalized.receiveWhatsAppUpdates,
-      },
-    }
-  }
-
-  const payload = await apiRequest('/api/users/me/profile', {
-    method: 'POST',
-    body: JSON.stringify(normalized),
-  })
+  const payload = await profileService.updateMyProfile(normalized, { authMode: 'user' })
   return getApiUser(payload)
 }
 
@@ -626,73 +449,25 @@ export async function uploadUserProfileImage(file) {
     throw new Error('Choose a JPEG, PNG, WebP, or GIF image.')
   }
   if (file.size > 4 * 1024 * 1024) throw new Error('Images must be smaller than 4 MB.')
-  if (supabase) {
-    throw new Error('Profile image uploads are not configured for this Supabase project.')
-  }
-
-  const formData = new FormData()
-  formData.append('file', file)
-  const payload = await apiRequest('/api/users/me/profile-image', {
-    method: 'POST',
-    body: formData,
-  })
-  return payload
+  return profileService.updateMyProfileImage(file, { authMode: 'user' })
 }
 
 export async function signUpWithPassword(email, password, fullName, phone, receiveWhatsAppUpdates) {
-  if (supabase) {
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: {
-        data: {
-          name: fullName.trim(),
-          fullName: fullName.trim(),
-          phone: phone.trim(),
-          receiveWhatsAppUpdates,
-          role: 'restaurant',
-        },
-      },
-    })
-    if (error) throw error
-    return data
-  }
-
-  const payload = await apiRequest('/api/auth/sign-up', {
-    method: 'POST',
-    body: JSON.stringify({
-      email: email.trim(),
-      password,
-      fullName: fullName.trim(),
-      phone: phone.trim(),
-      receiveWhatsAppUpdates,
-    }),
+  const payload = await authService.signUp({
+    email: email.trim(),
+    password,
+    fullName: fullName.trim(),
+    phone: phone.trim(),
+    receiveWhatsAppUpdates,
   })
   const auth = persistAuthSession(payload)
   return {
     user: auth.user,
-    session: auth.isAuthenticated ? auth.session : null,
+    session: auth.isAuthenticated ? auth : null,
   }
-}
-
-export async function signInWithGoogle() {
-  if (!supabase) {
-    throw new Error('Google sign-in requires Supabase configuration.')
-  }
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: window.location.origin },
-  })
-  if (error) throw error
 }
 
 export async function saveProfile(userId, profile) {
-  if (supabase) {
-    const { data, error } = await supabase.from('profiles').upsert({ id: userId, ...profile }).select().single()
-    if (error) throw error
-    return data
-  }
-
   if (!isDemoMode) throw new Error('Use the account profile form to update backend user details.')
 
   saveDemoProfile({ id: userId, ...profile })
@@ -700,31 +475,17 @@ export async function saveProfile(userId, profile) {
 }
 
 export function subscribeToBookings(restaurantId, callback) {
-  if (!supabase) return () => {}
-  const channel = supabase.channel(`restaurant-bookings-${restaurantId}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `restaurant_id=eq.${restaurantId}` }, callback)
-    .subscribe()
-  return () => { supabase.removeChannel(channel) }
+  void restaurantId
+  void callback
+  return () => {}
 }
 
 export async function signOut() {
-  if (supabase) {
-    const { error } = await supabase.auth.signOut()
-    if (error) throw error
-    return
-  }
-
   writeStoredSession(null)
   clearDemoProfile()
 }
 
 export async function getSession() {
-  if (supabase) {
-    const { data, error } = await supabase.auth.getSession()
-    if (error) throw error
-    return data.session
-  }
-
   const stored = readStoredSession()
   if (!stored) return null
 
@@ -736,9 +497,8 @@ export async function getSession() {
 }
 
 export function subscribeToAuth(callback) {
-  if (!supabase) return () => {}
-  const { data } = supabase.auth.onAuthStateChange((_event, session) => callback(session))
-  return () => data.subscription.unsubscribe()
+  void callback
+  return () => {}
 }
 
 export function createLocalDemoSession(identifier, name = 'Restaurant Owner') {
