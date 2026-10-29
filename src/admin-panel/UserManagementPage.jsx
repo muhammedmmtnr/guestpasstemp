@@ -62,11 +62,6 @@ function UserManagementPage({ onSignOut }) {
   const [retryKey, setRetryKey] = useState(0);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState('');
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-  const [createError, setCreateError] = useState('');
-  const [createSuccess, setCreateSuccess] = useState('');
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'admin' });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -146,32 +141,6 @@ function UserManagementPage({ onSignOut }) {
     setOptions((current) => ({ ...current, page }));
   }
 
-  async function handleCreateUser(event) {
-    event.preventDefault();
-    if (isCreating) return;
-
-    const name = newUser.name.trim();
-    const email = newUser.email.trim();
-    if (!name || !email || newUser.password.length < 8) {
-      setCreateError('Enter a name, valid email, and password with at least 8 characters.');
-      return;
-    }
-
-    setIsCreating(true);
-    setCreateError('');
-    setCreateSuccess('');
-    try {
-      await adminUsersApi.create({ ...newUser, name, email });
-      setNewUser({ name: '', email: '', password: '', role: 'admin' });
-      setCreateSuccess('Admin account created.');
-      setRetryKey((current) => current + 1);
-    } catch (requestError) {
-      setCreateError(requestError.message || 'Could not create the account.');
-    } finally {
-      setIsCreating(false);
-    }
-  }
-
   async function handleSignOut() {
     if (isSigningOut) {
       return;
@@ -201,17 +170,7 @@ function UserManagementPage({ onSignOut }) {
             </p>
           </div>
           <div className="user-management-header-actions">
-            <button
-              type="button"
-              className="user-management-refresh"
-              onClick={() => {
-                setIsCreateOpen((current) => !current);
-                setCreateError('');
-                setCreateSuccess('');
-              }}
-            >
-              {isCreateOpen ? 'Cancel' : 'Create admin'}
-            </button>
+            <a className="user-management-refresh" href="/admin/users/new">Create admin</a>
             <button type="button" className="user-management-refresh" onClick={() => setRetryKey((current) => current + 1)}>
               Refresh
             </button>
@@ -222,63 +181,6 @@ function UserManagementPage({ onSignOut }) {
         </div>
 
         {signOutError && <p className="user-details-error" role="alert">{signOutError}</p>}
-        {createSuccess && <p className="user-management-success" role="status">{createSuccess}</p>}
-        {isCreateOpen && (
-          <form className="user-management-create-form" onSubmit={handleCreateUser}>
-            <h2>Create an admin account</h2>
-            <div className="user-management-create-fields">
-              <label>
-                <span>Name</span>
-                <input
-                  value={newUser.name}
-                  onChange={(event) => setNewUser({ ...newUser, name: event.target.value })}
-                  autoComplete="name"
-                  maxLength={120}
-                  required
-                  disabled={isCreating}
-                />
-              </label>
-              <label>
-                <span>Email</span>
-                <input
-                  type="email"
-                  value={newUser.email}
-                  onChange={(event) => setNewUser({ ...newUser, email: event.target.value })}
-                  autoComplete="email"
-                  required
-                  disabled={isCreating}
-                />
-              </label>
-              <label>
-                <span>Password</span>
-                <input
-                  type="password"
-                  value={newUser.password}
-                  onChange={(event) => setNewUser({ ...newUser, password: event.target.value })}
-                  autoComplete="new-password"
-                  minLength={8}
-                  required
-                  disabled={isCreating}
-                />
-              </label>
-              <label>
-                <span>Role</span>
-                <select
-                  value={newUser.role}
-                  onChange={(event) => setNewUser({ ...newUser, role: event.target.value })}
-                  disabled={isCreating}
-                >
-                  <option value="admin">Admin</option>
-                  <option value="super_admin">Super admin</option>
-                </select>
-              </label>
-            </div>
-            {createError && <p className="user-details-error" role="alert">{createError}</p>}
-            <button type="submit" className="user-management-apply" disabled={isCreating}>
-              {isCreating ? 'Creating account…' : 'Create account'}
-            </button>
-          </form>
-        )}
 
         <form className="user-management-filters" onSubmit={applyFilters}>
           <label>
@@ -334,7 +236,7 @@ function UserManagementPage({ onSignOut }) {
             <strong>Unable to load users</strong>
             <p>{error}</p>
             {errorStatus === 401 ? (
-              <p>Your super admin session is no longer valid. Sign in again to continue.</p>
+              <p>Your admin session is no longer valid. Sign in again to continue.</p>
             ) : null}
             <button type="button" className="user-management-retry" onClick={() => setRetryKey((current) => current + 1)}>
               Retry

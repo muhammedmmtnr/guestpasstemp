@@ -1,16 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { adminAuthApi, setAdminApiAccessTokenProvider } from './api';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { authApi } from './api';
+import {
+  ADMIN_SESSION_STORAGE_KEY,
+  getAuthUser,
+  isAdminAccount,
+  pickAccessToken,
+} from './adminAuth';
 
-const STORAGE_KEY = 'guestpass.super-admin.v1';
+const LEGACY_SESSION_STORAGE_KEY = 'guestpass.super-admin.v1';
 const AdminAuthContext = createContext(null);
-
-function getRole(user) {
-  return user?.role ?? user?.accountType ?? user?.account_type ?? '';
-}
-
-export function isSuperAdmin(user) {
-  return typeof getRole(user) === 'string' && getRole(user).toLowerCase() === 'super_admin';
-}
 
 function isExpired(token) {
   try {
@@ -25,41 +23,33 @@ function isExpired(token) {
 }
 
 function readStoredSession() {
-  const serialized = sessionStorage.getItem(STORAGE_KEY);
+  if (typeof window === 'undefined') return null;
+  window.sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
+  const serialized = window.sessionStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
   if (!serialized) return null;
 
   try {
     const session = JSON.parse(serialized);
-    if (typeof session?.token === 'string' && isSuperAdmin(session.user) && !isExpired(session.token)) {
+    if (
+      typeof session?.token === 'string'
+      && session.user
+      && typeof session.user === 'object'
+      && !isExpired(session.token)
+    ) {
       return session;
     }
   } catch {
-    sessionStorage.removeItem(STORAGE_KEY);
+    window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
     return null;
   }
 
-  sessionStorage.removeItem(STORAGE_KEY);
+  window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
   return null;
 }
 
-function normalizeAuthResponse(payload) {
-  const data = payload?.data ?? payload;
-  const session = data?.session ?? data;
-  const user = data?.user ?? data?.admin ?? session?.user ?? null;
-  const token = session?.accessToken
-    ?? session?.access_token
-    ?? session?.token
-    ?? data?.accessToken
-    ?? data?.access_token
-    ?? data?.token
-    ?? null;
-
-  return { user, token };
-}
-
 function getErrorMessage(error) {
-  if (error?.status === 403 && error?.code === 'SUPER_ADMIN_EXISTS') {
-    return 'A super admin account already exists. Sign in instead.';
+  if (error?.status === 403) {
+    return error.message || 'You do not have permission to perform this action.';
   }
   return error?.message || 'The request could not be completed. Please try again.';
 }
@@ -71,73 +61,59 @@ function withErrorDetails(error) {
   return wrapped;
 }
 
-export function isSuperAdminExistsError(error) {
-  return error?.status === 403 && (
-    error?.code === 'SUPER_ADMIN_EXISTS'
-    || /super admin.{0,30}already exists|already exists.{0,30}super admin/i.test(error?.message || '')
-  );
-}
-
 export function AdminAuthProvider({ children }) {
   const [session, setSession] = useState(readStoredSession);
   const [isLoading, setIsLoading] = useState(true);
-  const tokenRef = useRef(session?.token ?? null);
-  tokenRef.current = session?.token ?? null;
 
   const clearSession = useCallback(() => {
-    sessionStorage.removeItem(STORAGE_KEY);
-    tokenRef.current = null;
+    window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
     setSession(null);
   }, []);
 
-  const acceptAuthResponse = useCallback((payload) => {
-    const { user, token } = normalizeAuthResponse(payload);
-    if (!isSuperAdmin(user)) {
-      throw new Error('Not authorized');
-    }
-    if (typeof token !== 'string' || token.trim() === '') {
-      throw new Error('The API response did not include an access token.');
-    }
-
-    const nextSession = { user, token };
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
-    tokenRef.current = token;
-    setSession(nextSession);
-  }, []);
-
-  const bootstrap = useCallback(async (name, email, password, setupKey) => {
-    try {
-      const payload = await adminAuthApi.bootstrap({ name, email, password }, setupKey);
-      acceptAuthResponse(payload);
-    } catch (error) {
-      throw withErrorDetails(error);
-    }
-  }, [acceptAuthResponse]);
-
   const signIn = useCallback(async (email, password) => {
+    clearSession();
     try {
-      const payload = await adminAuthApi.login({ email, password });
-      acceptAuthResponse(payload);
+      const payload = await authApi.signIn(
+        { email: email.trim(), password },
+        { authMode: 'none' },
+      );
+      const user = getAuthUser(payload);
+      if (!isAdminAccount(user)) {
+        clearSession();
+        throw new Error('This account does not have admin access.');
+      }
+
+      const token = pickAccessToken(payload);
+      if (!token) {
+        clearSession();
+        throw new Error('The API response did not include an access token.');
+      }
+
+      const nextSession = { user, token };
+      window.sessionStorage.setItem(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(nextSession));
+      setSession(nextSession);
     } catch (error) {
+      clearSession();
       throw withErrorDetails(error);
     }
-  }, [acceptAuthResponse]);
+  }, [clearSession]);
 
   const signOut = useCallback(() => {
     clearSession();
   }, [clearSession]);
 
   useEffect(() => {
-    setAdminApiAccessTokenProvider(() => tokenRef.current);
     setIsLoading(false);
+
     function handleUnauthorized() {
       clearSession();
-      window.location.replace('/admin/login?reason=expired');
+      const from = `${window.location.pathname}${window.location.search}`;
+      const query = new URLSearchParams({ reason: 'expired', from });
+      window.location.replace(`/admin/login?${query}`);
     }
 
     window.addEventListener('guestpass:admin-unauthorized', handleUnauthorized);
     return () => {
-      setAdminApiAccessTokenProvider(null);
       window.removeEventListener('guestpass:admin-unauthorized', handleUnauthorized);
     };
   }, [clearSession]);
@@ -146,10 +122,9 @@ export function AdminAuthProvider({ children }) {
     session,
     user: session?.user ?? null,
     isLoading,
-    bootstrap,
     signIn,
     signOut,
-  }), [session, isLoading, bootstrap, signIn, signOut]);
+  }), [session, isLoading, signIn, signOut]);
 
   return <AdminAuthContext.Provider value={value}>{children}</AdminAuthContext.Provider>;
 }
@@ -159,5 +134,6 @@ export function useAdminAuth() {
   if (!context) {
     throw new Error('useAdminAuth must be used within AdminAuthProvider.');
   }
+
   return context;
 }

@@ -1,24 +1,15 @@
-import { supabase, supabaseConfigurationError } from '../supabase';
 import { getQueueErrorMessage } from './errorMessages';
 
 export { getQueueErrorMessage };
 
-export function requireSupabase() {
-  if (!supabase) {
-    throw new Error(supabaseConfigurationError || 'Supabase is not configured.');
-  }
-
-  return supabase;
+export function requireQueueBackend() {
+  throw new Error('Restaurant queue operations are unavailable until their REST API routes are provided.');
 }
 
 export async function callQueueRpc(name, args) {
-  const client = requireSupabase();
-  const { data, error } = await client.rpc(name, args);
-  if (error) {
-    throw new Error(getQueueErrorMessage(error));
-  }
-
-  return data;
+  void name;
+  void args;
+  throw new Error('Restaurant queue operations are unavailable until their REST API routes are provided.');
 }
 
 export function firstRow(data) {

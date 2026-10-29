@@ -1,102 +1,62 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { setApiAccessTokenProvider } from './api';
-import { supabase, supabaseConfigurationError } from './supabase';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { authApi, setApiAccessTokenProvider } from './api';
+import { pickAccessToken } from './adminAuth';
 
 const AuthContext = createContext(null);
+const STORAGE_KEY = 'guestpass.staff.v1';
 
-function getSignInError(error) {
-  if (error?.name === 'AuthRetryableFetchError' || error instanceof TypeError) {
-    return 'Could not reach Supabase Auth. Check your connection and project configuration.';
+function readStaffSession() {
+  try {
+    const session = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null');
+    return typeof session?.token === 'string' ? session : null;
+  } catch {
+    sessionStorage.removeItem(STORAGE_KEY);
+    return null;
   }
-
-  return 'Sign-in failed. Check your email and password, then try again.';
 }
 
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState(null);
-  const [isLoading, setIsLoading] = useState(Boolean(supabase));
-  const unauthorizedHandled = useRef(false);
+  const [session, setSession] = useState(readStaffSession);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!supabase) {
-      setApiAccessTokenProvider(null);
-      setIsLoading(false);
-      return undefined;
-    }
-
-    setApiAccessTokenProvider(async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (error) {
-        throw new Error('Unable to read the current Supabase session. Please sign in again.');
-      }
-
-      return data.session?.access_token ?? null;
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setIsLoading(false);
-      if (nextSession) {
-        unauthorizedHandled.current = false;
-      }
-    });
-
     async function handleUnauthorized() {
-      if (unauthorizedHandled.current) {
-        return;
-      }
-
-      unauthorizedHandled.current = true;
-      const from = `${window.location.pathname}${window.location.search}`;
-
-      try {
-        await supabase.auth.signOut({ scope: 'local' });
-      } catch {
-        window.sessionStorage.removeItem('guestpass-supabase-session');
-      } finally {
-        const query = new URLSearchParams({ reason: 'expired', from });
-        window.location.replace(`/sign-in?${query}`);
-      }
+      sessionStorage.removeItem(STORAGE_KEY);
+      setSession(null);
+      window.location.replace('/staff/login?reason=expired');
     }
 
     window.addEventListener('guestpass:unauthorized', handleUnauthorized);
-
+    setApiAccessTokenProvider(() => readStaffSession()?.token ?? null);
+    setIsLoading(false);
     return () => {
-      subscription.unsubscribe();
       window.removeEventListener('guestpass:unauthorized', handleUnauthorized);
       setApiAccessTokenProvider(null);
     };
   }, []);
 
   const signIn = useCallback(async (email, password) => {
-    if (!supabase) {
-      throw new Error(supabaseConfigurationError);
+    const payload = await authApi.signIn({ email, password }, { authMode: 'none' });
+    const token = pickAccessToken(payload);
+    const user = payload?.data?.user ?? payload?.user ?? null;
+    if (!token || !user) {
+      throw new Error('The API response did not include an authenticated session.');
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error || !data.session) {
-      throw new Error(getSignInError(error));
-    }
-
-    setSession(data.session);
-    return data.session;
+    const nextSession = { token, user };
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
+    setSession(nextSession);
+    return nextSession;
   }, []);
 
   const signOut = useCallback(async () => {
-    if (!supabase) {
-      return;
-    }
-
-    const { error } = await supabase.auth.signOut({ scope: 'local' });
-    if (error) {
-      throw new Error('Could not clear the local session. Please try again.');
-    }
+    sessionStorage.removeItem(STORAGE_KEY);
     setSession(null);
   }, []);
 
   const value = useMemo(() => ({
-    isConfigured: Boolean(supabase),
-    configurationError: supabaseConfigurationError,
+    isConfigured: true,
+    configurationError: '',
     isLoading,
     session,
     signIn,

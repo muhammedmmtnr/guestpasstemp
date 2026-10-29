@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import ContractUnavailablePage from './ContractUnavailablePage';
+import AdminCreatePage from './AdminCreatePage';
+import AdminProfilePage from './AdminProfilePage';
 import SignInPage from './SignInPage';
-import SetupPage from './SetupPage';
 import UserDetailsPage from './UserDetailsPage';
 import UserManagementPage from './UserManagementPage';
-import { isSuperAdmin, useAdminAuth } from './AdminAuthProvider';
+import { isAdminAccount } from './adminAuth';
+import { useAdminAuth } from './AdminAuthProvider';
 import { adminDashboardApi } from './api';
 
 const sidebarItems = [
@@ -124,10 +126,11 @@ function App() {
   const [dashboardStats, setDashboardStats] = useState(null);
   const [dashboardStatsError, setDashboardStatsError] = useState('');
   const isAdminHome = pathname === '/admin' || pathname === '/admin/';
-  const isPublicAdminAuthRoute = pathname === '/admin/setup' || pathname === '/admin/login';
+  const isPublicAdminAuthRoute = pathname === '/admin/login';
+  const hasAdminAccess = isAdminAccount(auth.user);
 
   useEffect(() => {
-    if (!isAdminHome || auth.isLoading || !auth.session) return undefined;
+    if (!isAdminHome || auth.isLoading || !auth.session || !hasAdminAccess) return undefined;
     const controller = new AbortController();
     setDashboardStatsError('');
     adminDashboardApi.stats({ signal: controller.signal })
@@ -141,24 +144,41 @@ function App() {
       });
 
     return () => controller.abort();
-  }, [auth.isLoading, auth.session, isAdminHome]);
+  }, [auth.isLoading, auth.session, hasAdminAccess, isAdminHome]);
 
   useEffect(() => {
     if (auth.isLoading) return;
-    if (pathname === '/admin/setup' && auth.session) {
-      window.location.replace('/admin');
-    } else if (pathname === '/admin/login' && auth.session) {
+    if (pathname === '/admin/login' && auth.session && hasAdminAccess) {
       window.location.replace(getSafeReturnPath());
     } else if (!isPublicAdminAuthRoute && !auth.session) {
       const query = new URLSearchParams({ from: `${pathname}${window.location.search}` });
       window.location.replace(`/admin/login?${query}`);
     }
-  }, [auth.isLoading, auth.session, isPublicAdminAuthRoute, pathname]);
+  }, [auth.isLoading, auth.session, hasAdminAccess, isPublicAdminAuthRoute, pathname]);
 
-  if (pathname === '/admin/setup') {
-    return auth.session
-      ? <main className="user-details-page"><p role="status">Opening the admin panel…</p></main>
-      : <SetupPage />;
+  if (auth.isLoading) {
+    return <main className="user-details-page"><p role="status">Checking admin session…</p></main>;
+  }
+
+  if (auth.session && !hasAdminAccess) {
+    return (
+      <main className="user-details-page">
+        <section className="user-details-card">
+          <h1>Access denied</h1>
+          <p className="user-details-message">This account does not have admin access.</p>
+          <button
+            type="button"
+            className="user-management-apply"
+            onClick={() => {
+              auth.signOut();
+              window.location.replace('/admin/login');
+            }}
+          >
+            Sign out
+          </button>
+        </section>
+      </main>
+    );
   }
 
   if (pathname === '/admin/login') {
@@ -167,8 +187,16 @@ function App() {
       : <SignInPage />;
   }
 
-  if (auth.isLoading) {
-    return <main className="user-details-page"><p role="status">Checking admin session…</p></main>;
+  if (pathname === '/admin/users/new') {
+    return auth.session
+      ? <AdminCreatePage />
+      : <main className="user-details-page"><p role="status">Redirecting to admin sign in…</p></main>;
+  }
+
+  if (pathname === '/admin/profile') {
+    return auth.session
+      ? <AdminProfilePage />
+      : <main className="user-details-page"><p role="status">Redirecting to admin sign in…</p></main>;
   }
 
   if (pathname === '/admin/users' || pathname === '/admin/users/') {
@@ -198,7 +226,18 @@ function App() {
     }
   }
 
-  if (!auth.session || !isSuperAdmin(auth.user)) {
+  if (pathname !== '/admin' && pathname !== '/admin/') {
+    return (
+      <main className="user-details-page">
+        <section className="user-details-card">
+          <h1>Page not found</h1>
+          <a className="user-management-view" href="/admin">Return to dashboard</a>
+        </section>
+      </main>
+    );
+  }
+
+  if (!auth.session || !hasAdminAccess) {
     return <main className="user-details-page"><p role="status">Redirecting to admin sign in…</p></main>;
   }
 
@@ -207,7 +246,7 @@ function App() {
     || auth.user.name
     || auth.user.profile?.full_name
     || auth.user.email
-    || 'Super Admin';
+    || 'Admin';
   const displayRole = String(auth.user.role ?? auth.user.accountType ?? auth.user.account_type)
     .replace(/[_-]+/g, ' ');
 
@@ -279,6 +318,7 @@ function App() {
                 <div className="user-name">{displayName}</div>
                 <div className="user-role">{displayRole}</div>
               </div>
+              <a className="admin-profile-link" href="/admin/profile">Profile</a>
               <button type="button" className="admin-signout" onClick={handleSignOut}>Sign out</button>
             </div>
           </div>
@@ -514,10 +554,11 @@ function App() {
 
 function getSafeReturnPath() {
   const requestedPath = new URLSearchParams(window.location.search).get('from');
+  const requestedRoute = requestedPath?.split('?')[0];
   if (
-    requestedPath?.startsWith('/admin/')
-    && requestedPath !== '/admin/login'
-    && requestedPath !== '/admin/setup'
+    requestedPath
+    && (requestedRoute === '/admin'
+      || /^\/admin\/(?:profile|users(?:\/new|\/[^/]+)?)\/?$/.test(requestedRoute))
   ) {
     return requestedPath;
   }

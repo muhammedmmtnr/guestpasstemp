@@ -1,4 +1,4 @@
-import { callQueueRpc, firstRow, requireSupabase } from './errors';
+import { callQueueRpc, firstRow, requireQueueBackend } from './errors';
 
 export async function getRestaurantBySlug(slug) {
   const restaurant = firstRow(await callQueueRpc('get_restaurant_by_slug', { p_slug: slug }));
@@ -18,7 +18,7 @@ export async function createRestaurant({ name, slug, hours }) {
 }
 
 export async function updateRestaurantSettings(restaurantId, settings) {
-  const client = requireSupabase();
+  const client = requireQueueBackend();
   const { data, error } = await client
     .from('restaurants')
     .update({
@@ -42,7 +42,7 @@ export async function updateRestaurantSettings(restaurantId, settings) {
 }
 
 export async function listMyRestaurants(userId) {
-  const client = requireSupabase();
+  const client = requireQueueBackend();
   const { data, error } = await client
     .from('staff_members')
     .select('restaurant_id, role, email, restaurants(id, name, slug, hours, is_open, avg_wait_minutes, max_party_size, queue_limit)')
@@ -57,7 +57,7 @@ export async function listMyRestaurants(userId) {
 }
 
 export async function listRestaurantStaff(restaurantId) {
-  const client = requireSupabase();
+  const client = requireQueueBackend();
   const { data, error } = await client
     .from('staff_members')
     .select('user_id, email, role, created_at')

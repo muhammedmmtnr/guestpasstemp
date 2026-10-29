@@ -1,5 +1,6 @@
-const DEFAULT_API_BASE_URL = '/api';
-const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/+$/, '');
+import { getStoredAdminAccessToken } from './adminAuth.js';
+
+const API_BASE_URL = '/api';
 let accessTokenProvider = null;
 let adminAccessTokenProvider = null;
 const DEFAULT_ORIGIN = 'http://localhost:5173';
@@ -39,6 +40,8 @@ export function setAdminApiAccessTokenProvider(provider) {
   adminAccessTokenProvider = provider;
 }
 
+setAdminApiAccessTokenProvider(getStoredAdminAccessToken);
+
 function getApiUrl(path, query) {
   const origin = typeof window === 'undefined' ? DEFAULT_ORIGIN : window.location.origin;
   const baseUrl = new URL(`${API_BASE_URL}/`, origin);
@@ -71,6 +74,7 @@ async function request(path, {
   credentials = 'same-origin',
   headers: requestHeaders,
   authMode = 'default',
+  onUploadProgress,
 } = {}) {
   const headers = new Headers(requestHeaders);
   let requestBody;
@@ -94,13 +98,17 @@ async function request(path, {
 
   let response;
   try {
-    response = await fetch(getApiUrl(path, query), {
+    const url = getApiUrl(path, query);
+    const requestOptions = {
       method,
       headers,
       body: requestBody,
       credentials,
       signal,
-    });
+    };
+    response = onUploadProgress && body instanceof FormData
+      ? await sendWithUploadProgress(url, requestOptions, onUploadProgress)
+      : await fetch(url, requestOptions);
   } catch (error) {
     if (error?.name === 'AbortError') {
       throw error;
@@ -129,22 +137,88 @@ async function request(path, {
     }
   }
 
-  if (!response.ok) {
-    if (response.status === 401 && typeof window !== 'undefined') {
+  if (!response.ok || responseBody?.success === false) {
+    const errorStatus = Number(responseBody?.statusCode) || response.status;
+    if (errorStatus === 401 && authMode !== 'none' && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(
         authMode === 'admin' ? 'guestpass:admin-unauthorized' : 'guestpass:unauthorized',
       ));
     }
 
     const apiMessage = responseBody && typeof responseBody === 'object'
-      ? [responseBody.message, responseBody.error].find((value) => typeof value === 'string')
+      ? [
+        responseBody.message,
+        typeof responseBody.error === 'string' ? responseBody.error : responseBody.error?.message,
+      ].find((value) => typeof value === 'string')
       : undefined;
     const safeApiMessage = apiMessage ? sanitizeErrorMessage(apiMessage) : undefined;
 
     throw new ApiError(
-      safeApiMessage || ERROR_MESSAGES[response.status] || `The API request failed (HTTP ${response.status}).`,
-      { status: response.status, code: responseBody?.code },
+      safeApiMessage || ERROR_MESSAGES[errorStatus] || `The API request failed (HTTP ${errorStatus}).`,
+      {
+        status: errorStatus,
+        code: responseBody?.code,
+      },
     );
+  }
+
+  function sendWithUploadProgress(url, options, onUploadProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(options.method, url.toString(), true);
+      options.headers.forEach((value, key) => xhr.setRequestHeader(key, value));
+
+      function cleanup() {
+        options.signal?.removeEventListener('abort', handleAbort);
+      }
+
+      function handleAbort() {
+        xhr.abort();
+        cleanup();
+        reject(new DOMException('The operation was aborted.', 'AbortError'));
+      }
+
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          onUploadProgress({ loaded: event.loaded, total: event.total });
+        }
+      });
+      xhr.addEventListener('load', () => {
+        cleanup();
+        if (xhr.status === 0) {
+          reject(new TypeError('Unable to reach the API.'));
+          return;
+        }
+        const responseHeaders = new Headers();
+        for (const line of xhr.getAllResponseHeaders().trim().split(/[\r\n]+/)) {
+          if (!line) continue;
+          const separator = line.indexOf(':');
+          if (separator > 0) {
+            responseHeaders.append(line.slice(0, separator).trim(), line.slice(separator + 1).trim());
+          }
+        }
+        resolve(new Response(xhr.responseText, {
+          status: xhr.status,
+          statusText: xhr.statusText,
+          headers: responseHeaders,
+        }));
+      });
+      xhr.addEventListener('error', () => {
+        cleanup();
+        reject(new TypeError('Unable to reach the API.'));
+      });
+      xhr.addEventListener('abort', () => {
+        cleanup();
+        reject(new DOMException('The operation was aborted.', 'AbortError'));
+      });
+
+      if (options.signal?.aborted) {
+        handleAbort();
+        return;
+      }
+      options.signal?.addEventListener('abort', handleAbort, { once: true });
+      xhr.send(options.body);
+    });
   }
 
   return responseBody;
@@ -183,27 +257,12 @@ export const authApi = {
   }),
 };
 
-export const adminAuthApi = {
-  bootstrap: (payload, setupKey, options) => request('admin/auth/bootstrap', {
-    ...options,
-    method: 'POST',
-    body: payload,
-    headers: { ...options?.headers, 'x-setup-key': setupKey },
-    authMode: 'none',
-  }),
-  login: (payload, options) => request('admin/auth/login', {
-    ...options,
-    method: 'POST',
-    body: payload,
-    authMode: 'none',
-  }),
-};
-
 export const usersApi = {
   updateMyProfile: (payload, options) => request('users/me/profile', {
     ...options,
     method: 'POST',
     body: payload,
+    authMode: options?.authMode || 'admin',
   }),
   updateMyProfileImage: (formData, options) => {
     if (!(formData instanceof FormData)) {
@@ -214,6 +273,7 @@ export const usersApi = {
       ...options,
       method: 'POST',
       body: formData,
+      authMode: options?.authMode || 'admin',
     });
   },
 };
@@ -227,12 +287,6 @@ export const adminUsersApi = {
       authMode: 'admin',
     });
   },
-  create: (payload, options) => request('admin/users', {
-    ...options,
-    method: 'POST',
-    body: payload,
-    authMode: 'admin',
-  }),
   get: (userId, options) => request(`admin/users/${requireUserId(userId)}`, {
     ...options,
     authMode: 'admin',

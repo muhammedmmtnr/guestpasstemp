@@ -94,6 +94,8 @@ a { color: inherit; }
 .location-card strong { font-size: 12px; }.location-card small { color: #6b8589; font-size: 11px; }.location-card > svg { color: #168362; }
 .public-footer { min-height: 69px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px max(5vw, calc((100vw - 1200px)/2)); border-top: 1px solid #eef2ef; color: #83918e; font-size: 11px; }
 .public-footer button { display: inline-flex; align-items: center; gap: 5px; border: 0; color: #078258; background: transparent; font-size: 11px; font-weight: 700; cursor: pointer; }
+.public-admin-link { display: inline-flex; align-items: center; gap: 5px; color: #078258; font-size: 11px; font-weight: 700; text-decoration: none; }
+.public-admin-link:hover, .public-admin-link:focus-visible { color: #045f40; text-decoration: underline; }
 .public-notice { width: min(100% - 40px, 1000px); margin: 0 auto; }
 .empty-restaurant { min-height: 68vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; text-align: center; }
 .empty-restaurant .empty-icon { width: 66px; height: 66px; }

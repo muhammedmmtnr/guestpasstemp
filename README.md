@@ -1,6 +1,6 @@
 # GuestPass
 
-Responsive restaurant queue and guest check-in app built with React and Vite. The existing GuestPass REST API currently supports account authentication and profile management only. Restaurant and queue operations are not connected to this API.
+Responsive restaurant queue and guest check-in app built with React and Vite.
 
 ## Run locally
 
@@ -9,47 +9,32 @@ npm install
 npm run dev
 ```
 
-Set `VITE_API_URL` in `.env` to the current backend base URL. `.env.example` contains the supplied URL; restart Vite after changing it. In development, Vite proxies `/api` requests to that URL. In production, the public client sends requests directly to `VITE_API_URL`.
+The browser calls the API through relative `/api` paths. Set `VITE_API_URL` in `.env.local` to the backend origin for the Vite development proxy. Production uses the rewrite in `vercel.json`; no backend URL is embedded in the frontend API client.
 
-The admin console is mounted at `/admin`. Its API client reads `VITE_API_BASE_URL`, which should include the API prefix (for example, `https://your-service.onrender.com/api`). If unset, it uses the same-origin `/api` path. The admin setup and login screens call `POST /admin/auth/bootstrap` and `POST /admin/auth/login`; authenticated admin requests send the returned bearer token. The super-admin token is kept in tab-scoped `sessionStorage`, consistent with the existing auth session behavior.
+## Admin console
 
-Every request includes `ngrok-skip-browser-warning: true`. The shared API client adds JSON headers, injects a stored bearer token, parses JSON responses, normalizes errors, and times out requests after 15 seconds. A 401/403 clears the client session and redirects to sign-in. Sessions are held in tab-scoped `sessionStorage`; no refresh-token or server-side logout endpoint is documented.
+The admin console is mounted at `/admin`. Admin sign-in uses `POST /api/auth/sign-in` and requires an access token plus an admin role/account type in the response. The session is stored in tab-scoped `sessionStorage`. Requests that receive 401 clear the admin session and redirect to sign-in; 403 responses remain permission errors.
 
-## Known API routes
+The authenticated admin profile uses `POST /api/users/me/profile` to load and update profile fields. Profile images use `POST /api/users/me/profile-image` as multipart form data. The frontend accepts JPEG, PNG, and WebP files up to 5 MB and reports upload progress.
 
-These are the routes currently provided by the backend, based on the workspace integration and the route list supplied by the backend owner. The tunnel was offline during the latest verification attempt (`ERR_NGROK_3200`), so current response details could not be re-confirmed.
+The authenticated create-admin screen is at `/admin/users/new`. Account creation uses `POST /api/auth/sign-up` with the current admin token, but submission is disabled until the backend confirms the exact account-type field and value. Public sign-up does not expose an admin option.
 
-| Method | Path | Auth | Request |
-|---|---|---|---|
-| GET | `/api/health` | None | No body |
-| POST | `/api/auth/sign-up` | None | `email`, `password`, `fullName`, `phone`, `receiveWhatsAppUpdates` |
-| POST | `/api/auth/sign-in` | None | `email`, `password` |
-| POST | `/api/users/me/profile` | Bearer token | `{}` to load; `fullName`, `phone`, `receiveWhatsAppUpdates` to update |
-| POST | `/api/users/me/profile-image` | Bearer token | Multipart `file` |
+## API contract status
 
-Sign-up/sign-in responses are expected to contain a user and, when authenticated, a session/access token. Profile requests are expected to return `data.user`. Profile image uploads accept JPEG, PNG, WebP, or GIF; the frontend enforces a 4 MB limit. Exact response schemas and the backend's upload-size limit still need live confirmation.
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/auth/sign-in` | Admin and user authentication |
+| POST | `/api/auth/sign-up` | Account creation; admin account marker is awaiting backend confirmation |
+| POST | `/api/users/me/profile` | Load with an empty object or update profile fields |
+| POST | `/api/users/me/profile-image` | Multipart profile image upload |
 
-## Features awaiting backend routes
+The admin account marker in auth responses and the backend's admin-sign-up authorization rule are not confirmed. Restaurant and queue operations are unavailable until their REST API routes and request/response contracts are provided; the frontend does not substitute local demo data or Supabase for those operations.
 
-No routes are currently provided or confirmed for restaurant lookup/workspace/settings/media, queue summaries, booking lists or creation, booking status/cancellation, queue activity, or guest reviews. Those screens/actions do not fall back to local demo data or Supabase; they report that the feature is unavailable until the API exposes the needed routes.
-
-No WebSocket or SSE endpoint has been confirmed. Queue live updates therefore cannot be enabled yet. The existing `postman/GuestPass-Supabase-Auth.postman_collection.json` and SQL migrations are legacy Supabase assets and do not describe the current REST API.
-
-## Production checks
+## Validation
 
 ```bash
+node --test
 npm run build
 ```
 
-Never put passwords, tokens, or service credentials in source control. The `.env` file is ignored by Git.
-
-The super-admin UI expects the backend to configure `SUPER_ADMIN_SETUP_KEY`, `JWT_SECRET`, and `CORS_ORIGIN` and to implement the corresponding protected admin API routes. The backend source is not part of this workspace, so server setup, database migration, seeding, and production bootstrap instructions must be completed alongside that API implementation.
-
-### First super-admin setup (after the backend routes are deployed)
-
-1. On Render, set `SUPER_ADMIN_SETUP_KEY` to a unique, high-entropy secret and `JWT_SECRET` to a separate signing secret. Set `CORS_ORIGIN` to the exact local and deployed frontend origins, comma-separated (for example, `http://localhost:5173,https://your-app.vercel.app`). Do not put secret values in Git or Vercel.
-2. On Vercel, set `VITE_API_BASE_URL` to the Render API root, including `/api`, such as `https://your-service.onrender.com/api`.
-3. Locally, run the backend with the same environment variables and set `VITE_API_BASE_URL=http://localhost:<backend-port>/api` in the frontend `.env.local`. Start Vite, open `http://localhost:5173/admin/setup`, and submit the name, email, password, and setup key once. Use `/admin/login` for subsequent logins.
-4. For production, deploy the backend and frontend with the correct environment values, then visit `https://your-app.vercel.app/admin/setup` once. The endpoint must reject bootstrap after the first super admin has been created. Use the backend repository's `npm run create-super-admin -- --email=... --password=...` command only as its documented recovery/seed path.
-
-These steps are not usable until the backend endpoints and seed script exist. They are described here as the frontend contract only; this repository contains no backend application, migration, or seed-script source.
+Never commit `.env` or `.env.local`, passwords, tokens, or service credentials. `.env.example` contains variable names only.

@@ -1,4 +1,4 @@
-import { callQueueRpc, firstRow, requireSupabase } from './errors';
+import { callQueueRpc, firstRow, requireQueueBackend } from './errors';
 
 export async function joinQueue({ slug, name, partySize, phone, guestToken, tableLabel }) {
   return firstRow(await callQueueRpc('join_queue', {
@@ -20,7 +20,7 @@ export async function cancelGuestQueueEntry(guestToken) {
 }
 
 export async function listQueueEntries(restaurantId) {
-  const client = requireSupabase();
+  const client = requireQueueBackend();
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   const { data, error } = await client
@@ -59,7 +59,7 @@ export function notifyGuest() {
 }
 
 export async function getTodayQueueEntries(restaurantId) {
-  const client = requireSupabase();
+  const client = requireQueueBackend();
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   const { data, error } = await client
@@ -76,7 +76,7 @@ export async function getTodayQueueEntries(restaurantId) {
 }
 
 export function subscribeToRestaurantQueue(restaurantId, onChange, onError) {
-  const client = requireSupabase();
+  const client = requireQueueBackend();
   const channel = client
     .channel(`restaurant-queue:${restaurantId}`)
     .on('postgres_changes', {
@@ -97,7 +97,7 @@ export function subscribeToRestaurantQueue(restaurantId, onChange, onError) {
 }
 
 export function subscribeToGuestEntry(entryId, onChange, onError) {
-  const client = requireSupabase();
+  const client = requireQueueBackend();
   const channel = client
     .channel(`entry:${entryId}`, { config: { broadcast: { self: false } } })
     .on('broadcast', { event: 'guest_status_changed' }, (message) => {

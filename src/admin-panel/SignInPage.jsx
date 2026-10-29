@@ -3,7 +3,12 @@ import { useAdminAuth } from './AdminAuthProvider';
 
 function getReturnPath() {
   const requestedPath = new URLSearchParams(window.location.search).get('from');
-  if (requestedPath === '/admin' || requestedPath?.startsWith('/admin/')) {
+  const requestedRoute = requestedPath?.split('?')[0];
+  if (
+    requestedPath
+    && (requestedRoute === '/admin'
+      || /^\/admin\/(?:profile|users(?:\/new|\/[^/]+)?)\/?$/.test(requestedRoute))
+  ) {
     return requestedPath;
   }
 
@@ -46,7 +51,7 @@ function SignInPage() {
           <div>
             <p className="user-details-eyebrow">GuestPass Admin</p>
             <h1 id="sign-in-title">Sign in</h1>
-            <p className="user-details-id">Sign in with your super admin account.</p>
+            <p className="user-details-id">Sign in with an admin account.</p>
           </div>
         </div>
 
