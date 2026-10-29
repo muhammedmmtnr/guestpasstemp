@@ -60,7 +60,7 @@ function sanitizeErrorMessage(message) {
     .replace(/\bBearer\s+[^\s"'`,;]+/gi, 'Bearer [redacted]')
     .replace(/\b(?:eyJ[A-Za-z0-9_-]+\.)[A-Za-z0-9_.-]+/g, '[redacted token]')
     .replace(/\bsb_(?:secret|publishable)_[A-Za-z0-9_-]+/gi, '[redacted key]')
-    .replace(/\b(password|access[_ -]?token|refresh[_ -]?token|api[_ -]?key)\s*[:=]\s*[^,\s;]+/gi, '$1=[redacted]');
+    .replace(/\b(password|access[_ -]?token|refresh[_ -]?token|api[_ -]?key|setup[_ -]?key)\s*[:=]\s*[^,\s;]+/gi, '$1=[redacted]');
 }
 
 async function request(path, {

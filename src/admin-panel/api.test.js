@@ -15,9 +15,15 @@ import {
 } from './api.js';
 
 const originalFetch = globalThis.fetch;
+const originalWindow = globalThis.window;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (originalWindow === undefined) {
+    delete globalThis.window;
+  } else {
+    globalThis.window = originalWindow;
+  }
   setAdminApiAccessTokenProvider(null);
   setApiAccessTokenProvider(null);
 });
@@ -197,6 +203,23 @@ test('admin API requests use the super admin token and support user creation and
   assert.equal(calls.every(({ options }) => (
     options.headers.has('authorization')
   )), true);
+});
+
+test('admin 401 responses dispatch only the admin session-expired event', async () => {
+  const events = [];
+  globalThis.window = {
+    location: { origin: 'http://localhost:5173' },
+    dispatchEvent: (event) => events.push(event.type),
+  };
+  mockFetch(new Response(JSON.stringify({ message: 'Session expired' }), {
+    status: 401,
+    headers: { 'content-type': 'application/json' },
+  }));
+  setAdminApiAccessTokenProvider(async () => 'admin-token');
+
+  await assert.rejects(adminDashboardApi.stats(), ApiError);
+
+  assert.deepEqual(events, ['guestpass:admin-unauthorized']);
 });
 
 test('user response adaptation supports the isolated assumed list envelopes', () => {
