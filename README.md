@@ -28,7 +28,7 @@ The authenticated create-admin screen is at `/admin/users/new`. Account creation
 | POST | `/api/users/me/profile` | Load with an empty object or update profile fields |
 | POST | `/api/users/me/profile-image` | Multipart profile image upload |
 
-The admin account marker in auth responses and the backend's admin-sign-up authorization rule are not confirmed. Restaurant and queue operations are unavailable until their REST API routes and request/response contracts are provided; the frontend does not substitute local demo data or Supabase for those operations.
+The admin account marker in auth responses and the backend's admin-sign-up authorization rule are not confirmed. Restaurant and queue operations are unavailable until their REST API routes and request/response contracts are provided; the frontend does not substitute local demo data for those operations.
 
 ## Validation
 

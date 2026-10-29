@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
+import { useAuth } from './auth/AuthContext'
 import {
   claimDemoRestaurant,
   cancelBookingByToken,
@@ -19,9 +20,6 @@ import {
   listQueueActivity,
   removeBooking,
   saveProfile,
-  signInWithPassword,
-  signOut,
-  signUpWithPassword,
   submitPublicReview,
   subscribeToAuth,
   subscribeToBookings,
@@ -403,6 +401,7 @@ function EmptyState({ title, text, action, onAction }) {
 }
 
 function AuthPage({ onAuthenticated, onBack, onDemo }) {
+  const auth = useAuth()
   const [mode, setMode] = useState('signin')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -442,15 +441,21 @@ function AuthPage({ onAuthenticated, onBack, onDemo }) {
     setBusy(true); setError(''); setNotice('')
     try {
       if (mode === 'signup') {
-        const { user, session } = await signUpWithPassword(email, password, name, phone, receiveWhatsAppUpdates)
+        const { user, session } = await auth.signUp({
+          email: email.trim(),
+          password,
+          fullName: name.trim(),
+          phone: phone.trim(),
+          receiveWhatsAppUpdates,
+        })
         if (session) await onAuthenticated(user)
         else {
           setMode('signin')
           setNotice('Your account was created. Please sign in to continue.')
         }
       } else {
-        const user = await signInWithPassword(email, password)
-        await onAuthenticated(user)
+        const session = await auth.login(email, password)
+        await onAuthenticated(session.user)
       }
     }
     catch (caught) { setError(caught.message || 'Unable to authenticate. Please try again.') }
@@ -623,7 +628,7 @@ function SetupRestaurantPage({ user, onCreated, onBack }) {
 function AdminShell({ restaurant, page, onNavigate, onGuestView, onSignOut, children }) {
   const [mobileMenu, setMobileMenu] = useState(false)
   return <div className="admin-app"><header className="admin-topbar"><button className="mobile-menu-button" onClick={() => setMobileMenu(!mobileMenu)} aria-label="Toggle navigation" aria-expanded={mobileMenu}><Icon name="menu" /></button><button className="brand-link" onClick={() => onNavigate('dashboard')}><Brand /></button><div className="topbar-spacer" /><span className="topbar-restaurant"><span className="status-dot" />{restaurant.name}</span><Button onClick={onGuestView}>Guest view</Button><button className="account-button" title="Sign out" onClick={onSignOut}><Icon name="logout" size={18} /></button></header>
-    <div className="admin-body"><aside className={`admin-sidebar ${mobileMenu ? 'menu-open' : ''}`}><div className="sidebar-heading"><span>WORKSPACE</span><small>{restaurant.name}</small></div><nav>{adminNavigation.map((item) => <button key={item.id} className={`sidebar-link ${page === item.id ? 'selected' : ''}`} onClick={() => { onNavigate(item.id); setMobileMenu(false) }}><Icon name={item.icon} size={19} /><span>{item.label}</span>{item.id === 'queue' && <span className="sidebar-live"><i />LIVE</span>}</button>)}</nav><div className="sidebar-footer"><span className={`open-pill ${restaurant.is_open ? 'is-open' : 'is-closed'}`}><i />{restaurant.is_open ? 'Accepting guests' : 'Queue paused'}</span><small>GuestPass restaurant workspace</small></div></aside><main className="admin-main"><div className="demo-banner"><span><strong>{isDemoMode ? 'Demo workspace' : 'Live Supabase workspace'}</strong>{isDemoMode ? 'Your changes stay in this browser. Configure Supabase for multi-user hosting.' : 'Queue changes sync live with connected guest pages.'}</span>{isDemoMode && <button onClick={() => onNavigate('settings')}>Open restaurant settings</button>}</div>{children}</main></div><nav className="mobile-bottom-nav" aria-label="Workspace navigation">{[['dashboard', 'home', 'Home'], ['queue', 'people', 'Queue'], ['qr', 'qr', 'QR']].map(([id, icon, label]) => <button key={id} className={page === id ? 'selected' : ''} onClick={() => { onNavigate(id); setMobileMenu(false) }} aria-current={page === id ? 'page' : undefined}><Icon name={icon} size={19} /><span>{label}</span></button>)}<button className={mobileMenu ? 'selected' : ''} onClick={() => setMobileMenu(!mobileMenu)} aria-expanded={mobileMenu}><Icon name="menu" size={19} /><span>More</span></button></nav></div>
+    <div className="admin-body"><aside className={`admin-sidebar ${mobileMenu ? 'menu-open' : ''}`}><div className="sidebar-heading"><span>WORKSPACE</span><small>{restaurant.name}</small></div><nav>{adminNavigation.map((item) => <button key={item.id} className={`sidebar-link ${page === item.id ? 'selected' : ''}`} onClick={() => { onNavigate(item.id); setMobileMenu(false) }}><Icon name={item.icon} size={19} /><span>{item.label}</span>{item.id === 'queue' && <span className="sidebar-live"><i />LIVE</span>}</button>)}</nav><div className="sidebar-footer"><span className={`open-pill ${restaurant.is_open ? 'is-open' : 'is-closed'}`}><i />{restaurant.is_open ? 'Accepting guests' : 'Queue paused'}</span><small>GuestPass restaurant workspace</small></div></aside><main className="admin-main"><div className="demo-banner"><span><strong>{isDemoMode ? 'Demo workspace' : 'Live restaurant workspace'}</strong>{isDemoMode ? 'Your changes stay in this browser.' : 'Queue changes sync live with connected guest pages.'}</span>{isDemoMode && <button onClick={() => onNavigate('settings')}>Open restaurant settings</button>}</div>{children}</main></div><nav className="mobile-bottom-nav" aria-label="Workspace navigation">{[['dashboard', 'home', 'Home'], ['queue', 'people', 'Queue'], ['qr', 'qr', 'QR']].map(([id, icon, label]) => <button key={id} className={page === id ? 'selected' : ''} onClick={() => { onNavigate(id); setMobileMenu(false) }} aria-current={page === id ? 'page' : undefined}><Icon name={icon} size={19} /><span>{label}</span></button>)}<button className={mobileMenu ? 'selected' : ''} onClick={() => setMobileMenu(!mobileMenu)} aria-expanded={mobileMenu}><Icon name="menu" size={19} /><span>More</span></button></nav></div>
 }
 
 function PageTitle({ eyebrow, title, description, actions }) {
@@ -790,8 +795,11 @@ function SettingsPage({ restaurant, onSave, userId }) {
 }
 
 function App() {
+  const auth = useAuth()
   const query = useMemo(() => new URLSearchParams(window.location.search), [])
-  const [route, setRoute] = useState(query.has('booking') ? 'guest-status' : query.has('restaurant') ? 'guest-home' : 'guest-home')
+  const [route, setRoute] = useState(window.location.pathname === '/login'
+    ? 'portal'
+    : query.has('booking') ? 'guest-status' : 'guest-home')
   const [restaurant, setRestaurant] = useState(null)
   const [guestRestaurant, setGuestRestaurant] = useState(null)
   const [booking, setBooking] = useState(null)
@@ -852,12 +860,12 @@ function App() {
           }
         }
         if (session?.user) {
-          const currentUser = supabase ? session.user : await getUserProfile()
+          const currentUser = await getUserProfile()
           if (!active) return
           setUser(currentUser)
           const owned = await getOwnedRestaurant(currentUser.id)
           if (active && owned) { setRestaurant(owned); await loadBookings(owned.id) }
-          else if (active) setRoute(!supabase && !isDemoMode ? 'account' : 'setup')
+          else if (active) setRoute(isDemoMode ? 'setup' : 'account')
         }
       } catch (caught) {
         if (active) {
@@ -910,11 +918,11 @@ function App() {
   const queueCount = Number(queueSummary.queue_count) || 0
 
   async function authenticated(userData) {
-    const currentUser = supabase ? userData : await getUserProfile()
+    const currentUser = await getUserProfile()
     setUser(currentUser)
     const owned = await getOwnedRestaurant(currentUser.id)
     if (owned) { setRestaurant(owned); await loadBookings(owned.id); navigate('dashboard') }
-    else navigate(!supabase && !isDemoMode ? 'account' : 'setup')
+    else navigate(isDemoMode ? 'setup' : 'account')
   }
 
   async function saveAccountProfile(fields) {
@@ -939,7 +947,7 @@ function App() {
   }
 
   async function handleSignOut() {
-    try { await signOut(); setUser(null); setRestaurant(null); setBookings([]); setActivity([]); navigate('guest-home') }
+    try { auth.logout(); setUser(null); setRestaurant(null); setBookings([]); setActivity([]); navigate('guest-home') }
     catch (caught) { setPageError(caught.message || 'Could not sign out.') }
   }
 

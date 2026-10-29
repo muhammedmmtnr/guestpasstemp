@@ -8,6 +8,7 @@ import UserManagementPage from './UserManagementPage';
 import { isAdminAccount } from './adminAuth';
 import { useAdminAuth } from './AdminAuthProvider';
 import { adminDashboardApi } from './api';
+import ProtectedRoute from '../auth/ProtectedRoute';
 
 const sidebarItems = [
   { label: 'Overview', active: true, icon: '⌂', href: '/admin' },
@@ -126,8 +127,15 @@ function App() {
   const [dashboardStats, setDashboardStats] = useState(null);
   const [dashboardStatsError, setDashboardStatsError] = useState('');
   const isAdminHome = pathname === '/admin' || pathname === '/admin/';
-  const isPublicAdminAuthRoute = pathname === '/admin/login';
+  const isGenericAdminLogin = pathname === '/login'
+    && new URLSearchParams(window.location.search).get('from')?.startsWith('/admin');
+  const isPublicAdminAuthRoute = pathname === '/admin/login' || isGenericAdminLogin;
   const hasAdminAccess = isAdminAccount(auth.user);
+  const protectAdmin = (children) => (
+    <ProtectedRoute allowedRoles={['admin', 'super_admin', 'administrator']}>
+      {children}
+    </ProtectedRoute>
+  );
 
   useEffect(() => {
     if (!isAdminHome || auth.isLoading || !auth.session || !hasAdminAccess) return undefined;
@@ -148,11 +156,8 @@ function App() {
 
   useEffect(() => {
     if (auth.isLoading) return;
-    if (pathname === '/admin/login' && auth.session && hasAdminAccess) {
+    if (isPublicAdminAuthRoute && auth.session && hasAdminAccess) {
       window.location.replace(getSafeReturnPath());
-    } else if (!isPublicAdminAuthRoute && !auth.session) {
-      const query = new URLSearchParams({ from: `${pathname}${window.location.search}` });
-      window.location.replace(`/admin/login?${query}`);
     }
   }, [auth.isLoading, auth.session, hasAdminAccess, isPublicAdminAuthRoute, pathname]);
 
@@ -181,40 +186,29 @@ function App() {
     );
   }
 
-  if (pathname === '/admin/login') {
+  if (pathname === '/admin/login' || isGenericAdminLogin) {
     return auth.session
       ? <main className="user-details-page"><p role="status">Opening the admin panel…</p></main>
       : <SignInPage />;
   }
 
   if (pathname === '/admin/users/new') {
-    return auth.session
-      ? <AdminCreatePage />
-      : <main className="user-details-page"><p role="status">Redirecting to admin sign in…</p></main>;
+    return protectAdmin(<AdminCreatePage />);
   }
 
   if (pathname === '/admin/profile') {
-    return auth.session
-      ? <AdminProfilePage />
-      : <main className="user-details-page"><p role="status">Redirecting to admin sign in…</p></main>;
+    return protectAdmin(<AdminProfilePage />);
   }
 
   if (pathname === '/admin/users' || pathname === '/admin/users/') {
-    if (!auth.session) {
-      return <main className="user-details-page"><p role="status">Redirecting to admin sign in…</p></main>;
-    }
-
-    return <UserManagementPage onSignOut={auth.signOut} />;
+    return protectAdmin(<UserManagementPage onSignOut={auth.signOut} />);
   }
 
   const userDetailsMatch = pathname.match(/^\/(?:admin\/)?users\/([^/]+)\/?$/);
 
   if (userDetailsMatch) {
-    if (!auth.session) {
-      return <main className="user-details-page"><p role="status">Redirecting to admin sign in…</p></main>;
-    }
     try {
-      return <UserDetailsPage userId={decodeURIComponent(userDetailsMatch[1])} />;
+      return protectAdmin(<UserDetailsPage userId={decodeURIComponent(userDetailsMatch[1])} />);
     } catch {
       return (
         <ContractUnavailablePage
@@ -238,7 +232,7 @@ function App() {
   }
 
   if (!auth.session || !hasAdminAccess) {
-    return <main className="user-details-page"><p role="status">Redirecting to admin sign in…</p></main>;
+    return protectAdmin(<main className="user-details-page"><p role="status">Checking admin access…</p></main>);
   }
 
   const displayName = auth.user.fullName
@@ -252,10 +246,10 @@ function App() {
 
   function handleSignOut() {
     auth.signOut();
-    window.location.replace('/admin/login');
+    window.location.replace('/login?from=%2Fadmin');
   }
 
-  return (
+  return protectAdmin(
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-row">
@@ -548,7 +542,7 @@ function App() {
           </div>
         </section>
       </main>
-    </div>
+    </div>,
   );
 }
 

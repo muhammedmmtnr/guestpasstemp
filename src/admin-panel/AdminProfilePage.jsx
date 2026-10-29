@@ -4,7 +4,7 @@ import {
   buildAdminProfilePayload,
   validateProfileImage,
 } from './adminAuth';
-import { usersApi } from './api';
+import { profileService } from '../services/profile';
 
 function readProfileForm(profile) {
   return {
@@ -43,7 +43,7 @@ function AdminProfilePage() {
     setIsLoading(true);
     setError('');
 
-    usersApi.updateMyProfile({}, { signal: controller.signal, authMode: 'admin' })
+    profileService.getMyProfile({ signal: controller.signal, authMode: 'admin' })
       .then((payload) => {
         const nextProfile = adaptProfileResponse(payload);
         if (!nextProfile) {
@@ -83,7 +83,7 @@ function AdminProfilePage() {
     setError('');
     setSuccess('');
     try {
-      const payload = await usersApi.updateMyProfile(changedFields, { authMode: 'admin' });
+      const payload = await profileService.updateMyProfile(changedFields, { authMode: 'admin' });
       const updatedProfile = adaptProfileResponse(payload);
       setProfile((current) => ({ ...current, ...changedFields, ...(updatedProfile ?? {}) }));
       setSuccess('Profile updated.');
@@ -119,9 +119,7 @@ function AdminProfilePage() {
     setImageError('');
     setSuccess('');
     try {
-      const formData = new FormData();
-      formData.append('file', imageFile);
-      await usersApi.updateMyProfileImage(formData, {
+      await profileService.updateMyProfileImage(imageFile, {
         authMode: 'admin',
         onUploadProgress: ({ loaded, total }) => {
           setProgress(total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0);

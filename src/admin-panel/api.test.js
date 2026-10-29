@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
+import { apiClient } from '../lib/api.js';
 import {
   adaptUserListResponse,
   adminDashboardApi,
@@ -15,9 +16,13 @@ import {
 
 const originalFetch = globalThis.fetch;
 const originalWindow = globalThis.window;
+const originalBaseUrl = apiClient.defaults.baseURL;
+const originalAdapter = apiClient.defaults.adapter;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  apiClient.defaults.baseURL = originalBaseUrl;
+  apiClient.defaults.adapter = originalAdapter;
   if (originalWindow === undefined) {
     delete globalThis.window;
   } else {
@@ -29,9 +34,39 @@ afterEach(() => {
 
 function mockFetch(response = new Response(null, { status: 204 })) {
   const calls = [];
-  globalThis.fetch = async (url, options) => {
-    calls.push({ url: String(url), options });
-    return response;
+  apiClient.defaults.baseURL = 'http://localhost:5173/api';
+  apiClient.defaults.adapter = async (config) => {
+    const url = new URL(config.url, `${config.baseURL.replace(/\/+$/, '')}/`);
+    for (const [key, value] of Object.entries(config.params || {})) {
+      if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+    }
+    const headers = config.headers;
+    if (config.data instanceof FormData) headers.delete('Content-Type');
+    const options = {
+      method: config.method.toUpperCase(),
+      body: config.data,
+      headers,
+      signal: config.signal,
+      credentials: config.withCredentials ? 'include' : 'same-origin',
+    };
+    calls.push({ url: url.toString(), options });
+    const contentType = response.headers.get('content-type') || '';
+    const text = await response.clone().text();
+    const data = contentType.includes('json') && text ? JSON.parse(text) : text || null;
+    const result = {
+      data,
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+      config,
+    };
+    if (!response.ok) {
+      const error = new Error(response.statusText);
+      error.config = config;
+      error.response = result;
+      throw error;
+    }
+    return result;
   };
   return calls;
 }
@@ -54,7 +89,7 @@ test('profile updates use POST and uploads preserve FormData boundaries', async 
   const calls = mockFetch();
   const profilePayload = { suppliedBy: 'caller' };
   const formData = new FormData();
-  formData.append('providedFieldName', new Blob(['image']), 'profile.png');
+  formData.append('image', new Blob(['image']), 'profile.png');
 
   await usersApi.updateMyProfile(profilePayload);
   await usersApi.updateMyProfileImage(formData);
@@ -181,6 +216,10 @@ test('unauthenticated sign-in failures do not clear a staff or admin session', a
   const events = [];
   globalThis.window = {
     location: { origin: 'http://localhost:5173' },
+    sessionStorage: {
+      getItem: () => null,
+      removeItem: () => {},
+    },
     dispatchEvent: (event) => events.push(event.type),
   };
   mockFetch(new Response(JSON.stringify({ message: 'Invalid credentials' }), {
@@ -199,6 +238,10 @@ test('admin 401 responses dispatch only the admin session-expired event', async 
   const events = [];
   globalThis.window = {
     location: { origin: 'http://localhost:5173' },
+    sessionStorage: {
+      getItem: () => null,
+      removeItem: () => {},
+    },
     dispatchEvent: (event) => events.push(event.type),
   };
   mockFetch(new Response(JSON.stringify({ message: 'Session expired' }), {

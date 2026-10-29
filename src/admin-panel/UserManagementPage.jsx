@@ -150,7 +150,7 @@ function UserManagementPage({ onSignOut }) {
     setSignOutError('');
     try {
       await onSignOut();
-      window.location.replace('/admin/login');
+      window.location.replace('/login?from=%2Fadmin%2Fusers');
     } catch {
       setSignOutError('Could not clear the local session. Please try again.');
       setIsSigningOut(false);

@@ -1,67 +1,41 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { authApi, setApiAccessTokenProvider } from './api';
-import { pickAccessToken } from './adminAuth';
+import { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
+import { useAuth } from '../auth/AuthContext';
+import { setApiAccessTokenProvider } from '../lib/api';
 
 const AuthContext = createContext(null);
-const STORAGE_KEY = 'guestpass.staff.v1';
-
-function readStaffSession() {
-  try {
-    const session = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null');
-    return typeof session?.token === 'string' ? session : null;
-  } catch {
-    sessionStorage.removeItem(STORAGE_KEY);
-    return null;
-  }
-}
 
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState(readStaffSession);
-  const [isLoading, setIsLoading] = useState(true);
+  const auth = useAuth();
 
   useEffect(() => {
-    async function handleUnauthorized() {
-      sessionStorage.removeItem(STORAGE_KEY);
-      setSession(null);
-      window.location.replace('/staff/login?reason=expired');
+    function handleUnauthorized() {
+      window.location.replace('/login?reason=expired&from=%2Fstaff');
     }
 
     window.addEventListener('guestpass:unauthorized', handleUnauthorized);
-    setApiAccessTokenProvider(() => readStaffSession()?.token ?? null);
-    setIsLoading(false);
+    setApiAccessTokenProvider(() => auth.token, 'staff');
     return () => {
       window.removeEventListener('guestpass:unauthorized', handleUnauthorized);
-      setApiAccessTokenProvider(null);
+      setApiAccessTokenProvider(null, 'staff');
     };
-  }, []);
+  }, [auth.token]);
 
   const signIn = useCallback(async (email, password) => {
-    const payload = await authApi.signIn({ email, password }, { authMode: 'none' });
-    const token = pickAccessToken(payload);
-    const user = payload?.data?.user ?? payload?.user ?? null;
-    if (!token || !user) {
-      throw new Error('The API response did not include an authenticated session.');
-    }
-
-    const nextSession = { token, user };
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
-    setSession(nextSession);
-    return nextSession;
-  }, []);
+    return auth.login(email, password, { allowedRoles: ['staff', 'host', 'restaurant'] });
+  }, [auth]);
 
   const signOut = useCallback(async () => {
-    sessionStorage.removeItem(STORAGE_KEY);
-    setSession(null);
-  }, []);
+    auth.logout();
+  }, [auth]);
 
   const value = useMemo(() => ({
     isConfigured: true,
     configurationError: '',
-    isLoading,
-    session,
+    isLoading: auth.isLoading,
+    session: auth.session,
     signIn,
     signOut,
-  }), [isLoading, session, signIn, signOut]);
+  }), [auth.isLoading, auth.session, signIn, signOut]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
