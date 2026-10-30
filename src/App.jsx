@@ -108,7 +108,7 @@ function GuestLanding({ restaurant, queueCount, onJoin, onPortal, error }) {
     <div className="guest-site">
       <header className="public-header">
         <a className="brand-link" href="/" aria-label="GuestPass home"><Brand /></a>
-        <div className="public-header-right">{restaurant && <span className={`open-pill ${isOpen ? 'is-open' : 'is-closed'}`}><i />{isOpen ? 'Open now' : 'Queue paused'}</span>}<span className="language-button" aria-label="Current language: English"><Icon name="globe" size={18} /> EN</span><Button onClick={onPortal}>Restaurant portal</Button></div>
+        <div className="public-header-right">{restaurant && <span className={`open-pill ${isOpen ? 'is-open' : 'is-closed'}`}><i />{isOpen ? 'Open now' : 'Queue paused'}</span>}<span className="language-button" aria-label="Current language: English"><Icon name="globe" size={18} /> EN</span><a className="button button-secondary" href="/partner">Restaurant portal</a></div>
       </header>
       <main>
         {error && <div className="public-notice"><Notice>{error}</Notice></div>}
@@ -129,7 +129,7 @@ function GuestLanding({ restaurant, queueCount, onJoin, onPortal, error }) {
           </section>
         </> : <section className="empty-restaurant"><span className="empty-icon"><Icon name="qr" size={32} /></span><p className="eyebrow">GUESTPASS</p><h1>Find your next table</h1><p>Scan a restaurant’s GuestPass QR code to join their waitlist and follow your place in line.</p><Button variant="primary" onClick={onPortal}>Restaurant portal</Button></section>}
       </main>
-      <footer className="public-footer"><Brand compact /><span>Less waiting. More great food.</span><a className="public-admin-link" href="/admin/login">Admin sign in <Icon name="arrow" size={15} /></a><button onClick={onPortal}>Restaurant owner? Get started <Icon name="arrow" size={15} /></button></footer>
+      <footer className="public-footer"><Brand compact /><span>Less waiting. More great food.</span><a className="public-admin-link" href="/admin/login">Admin sign in <Icon name="arrow" size={15} /></a><a href="/partner">Restaurant owner? Get started <Icon name="arrow" size={15} /></a></footer>
     </div>
   )
 }

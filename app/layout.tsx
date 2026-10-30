@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "../src/index.css";
 
 export const metadata: Metadata = {
-  title: "GuestPass",
-  description: "GuestPass management platform",
+  title: "GuestPass — Restaurant Partner",
+  description: "One thoughtful workspace for every restaurant in your group.",
 };
 
 export default function RootLayout({
