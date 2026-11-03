@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
+import { useRef, useState } from "react";
+import readXlsxFile from "read-excel-file/browser";
 
 const initialRestaurants = [
   { name: "Olive & Thyme", city: "Bengaluru", address: "Indiranagar, 12th Main Road", status: "Active", plan: "Pro" },
@@ -69,7 +69,7 @@ function AuthScreen({ mode, setMode, onLogin, onSignup, onBack }) {
       <header className="gp-auth-header"><Brand inverse /><button className="gp-auth-back" onClick={onBack}>Back to GuestPass</button></header>
       <div className="gp-auth-story-copy"><span className="gp-overline">HOSPITALITY, TOGETHER</span><h1>Make room for<br /><em>more good days.</em></h1><p>One simple place to grow every restaurant in your group. Less admin, more time for the things that matter.</p><div className="gp-story-proof"><span className="gp-proof-avatars"><i>R</i><i>A</i><i>M</i><i>+</i></span><span><strong>Made for people who love hosting</strong><small>Independent restaurants and growing groups</small></span></div></div>
       <div className="gp-auth-art" aria-hidden="true"><div className="gp-art-plate"><span /><i /><b /></div><div className="gp-art-spark gp-art-spark-one">✳</div><div className="gp-art-spark gp-art-spark-two">✳</div></div>
-      <footer>© 2025 GuestPass <span>Built for better hospitality.</span></footer>
+      <footer>© 2026 GuestPass <span>Built for better hospitality.</span></footer>
     </section>
     <section className="gp-auth-form-side"><div className="gp-auth-mobile-brand"><Brand /></div><form className="gp-auth-form" onSubmit={submit}>
       <span className="gp-overline">{mode === "signup" ? "YOUR NEXT CHAPTER" : "WELCOME BACK"}</span>
@@ -149,9 +149,9 @@ function Onboarding({ onComplete, onCancel, initialName = "" }) {
   </div></main>;
 }
 
-function AppShell({ children, page, setPage, onLogout, account, openOnboarding }) {
+function AppShell({ children, page, setPage, onLogout, account, openOnboarding, searchQuery, onSearchChange }) {
   const nav = [{ key: "overview", label: "Overview", icon: "grid" }, { key: "restaurants", label: "Restaurants", icon: "store" }, { key: "subscription", label: "Subscription", icon: "card" }, { key: "payments", label: "Payment history", icon: "file" }, { key: "invoices", label: "Invoices", icon: "file" }];
-  return <div className="gp-app"><header className="gp-topbar"><button className="gp-mobile-brand" onClick={() => setPage("overview")}><Brand /></button><div className="gp-topbar-search"><Icon name="search" size={17} /><span>Search restaurants, invoices...</span><kbd>⌘ K</kbd></div><div className="gp-topbar-actions"><button className="gp-bell" aria-label="Notifications"><Icon name="bell" size={19} /><i /></button><span className="gp-topbar-divider" /><button className="gp-account-menu" onClick={onLogout} aria-label="Sign out"><span className="gp-avatar">{(account?.name || "A").split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="gp-account-copy"><strong>{account?.name || "Alex Morgan"}</strong><small>Account owner</small></span><Icon name="chevron" size={15} /></button></div></header>
+  return <div className="gp-app"><header className="gp-topbar"><button className="gp-mobile-brand" onClick={() => setPage("overview")}><Brand /></button><label className="gp-topbar-search"><Icon name="search" size={17} /><input type="search" aria-label="Search restaurants" placeholder="Search restaurants..." value={searchQuery} onChange={(event) => { onSearchChange(event.target.value); if (event.target.value) setPage("restaurants"); }} /></label><div className="gp-topbar-actions"><button className="gp-bell" aria-label="Notifications"><Icon name="bell" size={19} /><i /></button><span className="gp-topbar-divider" /><button className="gp-account-menu" onClick={onLogout} aria-label="Sign out"><span className="gp-avatar">{(account?.name || "A").split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="gp-account-copy"><strong>{account?.name || "Alex Morgan"}</strong><small>Account owner</small></span><Icon name="chevron" size={15} /></button></div></header>
     <div className="gp-body"><aside className="gp-sidebar"><button className="gp-sidebar-brand" onClick={() => setPage("overview")}><Brand /></button><div className="gp-workspace"><span className="gp-workspace-icon">{(account?.name || "A").charAt(0).toUpperCase()}</span><span><strong>{account?.brand || "Olive & Thyme Group"}</strong><small>Partner workspace</small></span><Icon name="chevron" size={15} /></div><span className="gp-nav-label">WORKSPACE</span><nav>{nav.map((item) => <button className={`gp-nav-link ${page === item.key ? "active" : ""}`} onClick={() => setPage(item.key)} key={item.key}><Icon name={item.icon} size={18} /><span>{item.label}</span>{item.key === "restaurants" && <small>{account?.restaurants?.length ?? initialRestaurants.length}</small>}</button>)}</nav><div className="gp-sidebar-bottom"><div className="gp-help-card"><span className="gp-help-icon"><Icon name="leaf" size={18} /></span><strong>Here when you need us.</strong><p>A question about your account? We're just a message away.</p><button onClick={() => window.alert("Our partner team is here to help at hello@guestpass.app.")}>Talk to our team <Icon name="arrow" size={14} /></button></div><button className="gp-nav-link gp-logout" onClick={onLogout}><Icon name="logout" size={18} /><span>Sign out</span></button><span className="gp-sidebar-version">GUESTPASS PARTNER · 1.0</span></div></aside><main className="gp-main">{children}</main></div>
     <button className="gp-mobile-add" onClick={openOnboarding}><Icon name="plus" size={19} /> Add restaurant</button></div>;
 }
@@ -167,9 +167,9 @@ function Overview({ restaurants, account, setPage, openOnboarding, onPayment }) 
   const standardPrice = total * 299;
   return <><PageHeader eyebrow="YOUR PARTNER WORKSPACE" title={`Good morning, ${(account?.name || "Alex").split(" ")[0]}.`} description="Here’s what’s happening across your restaurant group today." actions={<><Button variant="outline" onClick={() => document.getElementById("gp-import-input")?.click()}><Icon name="upload" size={16} /> Import sheet</Button><Button onClick={openOnboarding}><Icon name="plus" size={17} /> Add restaurant</Button></>} />
     <div className="gp-welcome-strip"><span className="gp-welcome-spark">✳</span><span><strong>Your table is growing.</strong> Everything your restaurants need, all in one place.</span><button onClick={() => setPage("restaurants")}>Explore your workspace <Icon name="arrow" size={15} /></button></div>
-    <section className="gp-stats"><article className="gp-stat-card"><span className="gp-stat-icon stat-green"><Icon name="store" size={19} /></span><span className="gp-stat-label">Total restaurants</span><strong>{total.toString().padStart(2, "0")}</strong><small><span className="gp-stat-growth"><Icon name="trend" size={13} /> Growing</span> across your group</small></article><article className="gp-stat-card"><span className="gp-stat-icon stat-blue"><Icon name="check" size={19} /></span><span className="gp-stat-label">Active restaurants</span><strong>{active.toString().padStart(2, "0")}</strong><small>{total ? `${Math.round(active / total * 100)}% of your locations` : "Add your first location"}</small></article><article className="gp-stat-card"><span className="gp-stat-icon stat-gold"><Icon name="card" size={19} /></span><span className="gp-stat-label">Subscription status</span><strong className="gp-stat-word">{active ? "All good" : "Get started"}</strong><small><span className="gp-status-dot" /> Renews on 24 Aug, 2025</small></article><article className="gp-stat-card"><span className="gp-stat-icon stat-lilac"><Icon name="grid" size={19} /></span><span className="gp-stat-label">Restaurant limit</span><strong>{total}<span className="gp-limit-separator"> / </span>10</strong><small>{Math.max(10 - total, 0)} more spots to fill</small><span className="gp-limit-progress"><i style={{ width: `${Math.min(total / 10 * 100, 100)}%` }} /></span></article></section>
+    <section className="gp-stats"><article className="gp-stat-card"><span className="gp-stat-icon stat-green"><Icon name="store" size={19} /></span><span className="gp-stat-label">Total restaurants</span><strong>{total.toString().padStart(2, "0")}</strong><small><span className="gp-stat-growth"><Icon name="trend" size={13} /> Growing</span> across your group</small></article><article className="gp-stat-card"><span className="gp-stat-icon stat-blue"><Icon name="check" size={19} /></span><span className="gp-stat-label">Active restaurants</span><strong>{active.toString().padStart(2, "0")}</strong><small>{total ? `${Math.round(active / total * 100)}% of your locations` : "Add your first location"}</small></article><article className="gp-stat-card"><span className="gp-stat-icon stat-gold"><Icon name="card" size={19} /></span><span className="gp-stat-label">Subscription status</span><strong className="gp-stat-word">{active ? "All good" : "Get started"}</strong><small><span className="gp-status-dot" /> Renews on 24 Nov, 2026</small></article><article className="gp-stat-card"><span className="gp-stat-icon stat-lilac"><Icon name="grid" size={19} /></span><span className="gp-stat-label">Restaurant limit</span><strong>{total}<span className="gp-limit-separator"> / </span>10</strong><small>{Math.max(10 - total, 0)} more spots to fill</small><span className="gp-limit-progress"><i style={{ width: `${Math.min(total / 10 * 100, 100)}%` }} /></span></article></section>
     <div className="gp-dashboard-grid"><section className="gp-panel gp-restaurants-panel"><div className="gp-panel-heading"><div><span className="gp-overline">YOUR PORTFOLIO</span><h2>Restaurants <span className="gp-count-pill">{total}</span></h2></div><button className="gp-link-button" onClick={() => setPage("restaurants")}>View all <Icon name="arrow" size={15} /></button></div><RestaurantTable restaurants={restaurants.slice(0, 4)} compact /><button className="gp-add-inline" onClick={openOnboarding}><span><Icon name="plus" size={15} /></span>Add a restaurant to your group</button></section>
-    <div className="gp-right-column"><section className="gp-subscription-card"><div className="gp-sub-card-head"><span className="gp-overline">YOUR SUBSCRIPTION</span><span className="gp-plan-badge">PRO PLAN</span></div><h2>Good things,<br />all together.</h2><p>Simple pricing. Happy restaurants. One monthly bill.</p><div className="gp-sub-card-price"><strong>₹{teamPrice.toLocaleString("en-IN")}</strong><span> / month</span></div><div className="gp-sub-rule" /><div className="gp-sub-math"><span>{total} restaurants × ₹299</span><s>₹{standardPrice.toLocaleString("en-IN")}</s></div><div className="gp-sub-math gp-team-offer"><span><i>✳</i> Team group offer</span><strong>₹{teamPrice.toLocaleString("en-IN")}</strong></div><Button variant="light" onClick={() => onPayment(teamPrice)}>View subscription <Icon name="arrow" size={16} /></Button><small className="gp-next-bill"><Icon name="clock" size={13} /> Next payment · 24 Aug, 2025</small></section>
+    <div className="gp-right-column"><section className="gp-subscription-card"><div className="gp-sub-card-head"><span className="gp-overline">YOUR SUBSCRIPTION</span><span className="gp-plan-badge">PRO PLAN</span></div><h2>Good things,<br />all together.</h2><p>Simple pricing. Happy restaurants. One monthly bill.</p><div className="gp-sub-card-price"><strong>₹{teamPrice.toLocaleString("en-IN")}</strong><span> / month</span></div><div className="gp-sub-rule" /><div className="gp-sub-math"><span>{total} restaurants × ₹299</span><s>₹{standardPrice.toLocaleString("en-IN")}</s></div><div className="gp-sub-math gp-team-offer"><span><i>✳</i> Team group offer</span><strong>₹{teamPrice.toLocaleString("en-IN")}</strong></div><Button variant="light" onClick={() => onPayment(teamPrice)}>View subscription <Icon name="arrow" size={16} /></Button><small className="gp-next-bill"><Icon name="clock" size={13} /> Next payment · 24 Nov, 2026</small></section>
     <section className="gp-panel gp-activity-panel"><div className="gp-panel-heading"><div><span className="gp-overline">RECENT ACTIVITY</span><h2>All caught up</h2></div><span className="gp-live-dot" /></div><div className="gp-activity-row"><span className="gp-activity-icon"><Icon name="check" size={15} /></span><span><strong>Olive & Thyme renewed Pro</strong><small>Today, 9:42 am</small></span></div><div className="gp-activity-row"><span className="gp-activity-icon activity-warm"><Icon name="plus" size={15} /></span><span><strong>The Sunday Table was added</strong><small>Yesterday, 4:18 pm</small></span></div></section></div></div>
   </>;
 }
@@ -179,10 +179,9 @@ function RestaurantTable({ restaurants, compact = false }) {
   return <div className={`gp-table-wrap${compact ? " gp-table-compact" : ""}`}><table className="gp-table"><thead><tr><th>RESTAURANT</th><th>LOCATION</th><th>PLAN</th><th>STATUS</th><th aria-label="Actions" /></tr></thead><tbody>{restaurants.map((restaurant, index) => <tr key={`${restaurant.name}-${index}`}><td><span className={`gp-restaurant-logo restaurant-logo-${index % 4}`}>{restaurant.name.slice(0, 1).toUpperCase()}</span><span className="gp-restaurant-name"><strong>{restaurant.name}</strong><small>{restaurant.brand || "Independent restaurant"}</small></span></td><td><span className="gp-city"><Icon name="pin" size={14} />{restaurant.city}</span></td><td><span className="gp-table-plan">{restaurant.plan || "Pro"}</span></td><td><span className={`gp-restaurant-status ${restaurant.status === "Active" ? "status-active" : "status-pending"}`}><i />{restaurant.status}</span></td><td><button className="gp-more-button" aria-label={`More options for ${restaurant.name}`} onClick={() => window.alert(`${restaurant.name} · ${restaurant.address || restaurant.city}`)}><Icon name="more" size={19} /></button></td></tr>)}</tbody></table></div>;
 }
 
-function RestaurantsPage({ restaurants, openOnboarding, onImport }) {
-  const [search, setSearch] = useState("");
-  const filtered = restaurants.filter((item) => `${item.name} ${item.city} ${item.brand || ""}`.toLowerCase().includes(search.toLowerCase()));
-  return <><PageHeader eyebrow="YOUR PORTFOLIO" title="Restaurants" description="Every location in your group, neatly in one place." actions={<><Button variant="outline" onClick={() => document.getElementById("gp-import-input")?.click()}><Icon name="upload" size={16} /> Import sheet</Button><Button onClick={openOnboarding}><Icon name="plus" size={17} /> Add restaurant</Button></>} /><div className="gp-list-toolbar"><label className="gp-search-input"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search restaurants..." /></label><span>{filtered.length} {filtered.length === 1 ? "restaurant" : "restaurants"}</span></div><section className="gp-panel gp-full-table"><RestaurantTable restaurants={filtered} /></section><section className="gp-import-callout"><span className="gp-import-icon"><Icon name="upload" size={20} /></span><span><strong>Bringing over a few locations?</strong><small>Upload a CSV or Excel sheet to add them all at once.</small></span><Button variant="outline" onClick={() => document.getElementById("gp-import-input")?.click()}>Import a sheet <Icon name="arrow" size={15} /></Button></section></>;
+function RestaurantsPage({ restaurants, openOnboarding, searchQuery, onSearchChange }) {
+  const filtered = restaurants.filter((item) => `${item.name} ${item.city} ${item.brand || ""}`.toLowerCase().includes(searchQuery.toLowerCase()));
+  return <><PageHeader eyebrow="YOUR PORTFOLIO" title="Restaurants" description="Every location in your group, neatly in one place." actions={<><Button variant="outline" onClick={() => document.getElementById("gp-import-input")?.click()}><Icon name="upload" size={16} /> Import sheet</Button><Button onClick={openOnboarding}><Icon name="plus" size={17} /> Add restaurant</Button></>} /><div className="gp-list-toolbar"><label className="gp-search-input"><Icon name="search" size={17} /><input value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search restaurants..." /></label><span>{filtered.length} {filtered.length === 1 ? "restaurant" : "restaurants"}</span></div><section className="gp-panel gp-full-table"><RestaurantTable restaurants={filtered} /></section><section className="gp-import-callout"><span className="gp-import-icon"><Icon name="upload" size={20} /></span><span><strong>Bringing over a few locations?</strong><small>Upload a CSV or Excel sheet to add them all at once.</small></span><Button variant="outline" onClick={() => document.getElementById("gp-import-input")?.click()}>Import a sheet <Icon name="arrow" size={15} /></Button></section></>;
 }
 
 function SubscriptionPage({ restaurants, onPayment }) {
@@ -198,26 +197,56 @@ function SubscriptionPage({ restaurants, onPayment }) {
 function HistoryPage({ type, onPayment }) {
   const invoices = type === "invoices";
   const items = invoices ? [
-    { date: "24 Jul, 2025", id: "INV-2025-0084", description: "GuestPass Pro · 3 restaurants", amount: "₹799", status: "Paid" },
-    { date: "24 Jun, 2025", id: "INV-2025-0072", description: "GuestPass Pro · 3 restaurants", amount: "₹799", status: "Paid" },
-    { date: "24 May, 2025", id: "INV-2025-0061", description: "GuestPass Pro · 2 restaurants", amount: "₹598", status: "Paid" },
+    { date: "24 Oct, 2026", id: "INV-2026-0084", description: "GuestPass Pro · 3 restaurants", amount: "₹799", status: "Paid" },
+    { date: "24 Sep, 2026", id: "INV-2026-0072", description: "GuestPass Pro · 3 restaurants", amount: "₹799", status: "Paid" },
+    { date: "24 Aug, 2026", id: "INV-2026-0061", description: "GuestPass Pro · 2 restaurants", amount: "₹598", status: "Paid" },
   ] : [
-    { date: "24 Jul, 2025", id: "PAY-2025-0084", description: "Monthly subscription · Pro", amount: "₹799", status: "Successful" },
-    { date: "24 Jun, 2025", id: "PAY-2025-0072", description: "Monthly subscription · Pro", amount: "₹799", status: "Successful" },
-    { date: "24 May, 2025", id: "PAY-2025-0061", description: "Monthly subscription · Pro", amount: "₹598", status: "Successful" },
+    { date: "24 Oct, 2026", id: "PAY-2026-0084", description: "Monthly subscription · Pro", amount: "₹799", status: "Successful" },
+    { date: "24 Sep, 2026", id: "PAY-2026-0072", description: "Monthly subscription · Pro", amount: "₹799", status: "Successful" },
+    { date: "24 Aug, 2026", id: "PAY-2026-0061", description: "Monthly subscription · Pro", amount: "₹598", status: "Successful" },
   ];
   return <><PageHeader eyebrow={invoices ? "YOUR PAPER TRAIL" : "SECURE & SIMPLE"} title={invoices ? "Invoice history" : "Payment history"} description={invoices ? "Your restaurant group's invoices, ready whenever you need them." : "A clear record of every subscription payment."} actions={<Button variant="outline" onClick={() => window.print()}><Icon name="file" size={16} /> Export history</Button>} /><section className="gp-panel gp-history-summary"><span className="gp-history-icon"><Icon name={invoices ? "file" : "card"} size={20} /></span><span><strong>{invoices ? "Everything in one place." : "All your payments, up to date."}</strong><small>{invoices ? "Invoices are issued automatically after each successful payment." : "Your Pro subscription is active. No action needed."}</small></span><span className="gp-history-account"><i /> {invoices ? "3 invoices" : "Payment method ·•••• 4242"}</span></section><section className="gp-panel gp-history-table"><div className="gp-panel-heading"><div><span className="gp-overline">{invoices ? "YOUR INVOICES" : "RECENT TRANSACTIONS"}</span><h2>{invoices ? "All invoices" : "Recent payments"}</h2></div></div><div className="gp-table-wrap"><table className="gp-table gp-history-list"><thead><tr><th>{invoices ? "ISSUED" : "DATE"}</th><th>REFERENCE</th><th>DESCRIPTION</th><th>AMOUNT</th><th>STATUS</th><th /></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{item.date}</td><td><strong className="gp-reference">{item.id}</strong></td><td>{item.description}</td><td><strong>{item.amount}</strong></td><td><span className="gp-restaurant-status status-active"><i />{item.status}</span></td><td><button className="gp-link-button" onClick={() => window.alert(`${item.id} is ready to view.`)}>View <Icon name="arrow" size={14} /></button></td></tr>)}</tbody></table></div></section><div className="gp-billing-help"><span>Need help with billing?</span><button onClick={() => onPayment(0)}>Talk to our team <Icon name="arrow" size={14} /></button></div></>;
 }
 
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quoted && character === '"' && text[index + 1] === '"') {
+      cell += '"';
+      index += 1;
+    } else if (character === '"') {
+      quoted = !quoted;
+    } else if (character === "," && !quoted) {
+      row.push(cell.trim());
+      cell = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && text[index + 1] === "\n") index += 1;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
 export default function PartnerApp() {
   const [page, setPage] = useState("overview");
+  const [searchQuery, setSearchQuery] = useState("");
   const [authMode, setAuthMode] = useState("");
   const [onboarding, setOnboarding] = useState(false);
   const [toast, setToast] = useState("");
-  const [account, setAccount] = useState(null);
+  const [account, setAccount] = useState({ name: "Alex Morgan", email: "hello@olivethyme.in", role: "Partner", brand: "Olive & Thyme Group" });
   const [restaurants, setRestaurants] = useState(initialRestaurants);
   const fileInput = useRef(null);
-  const activePage = useMemo(() => page, [page]);
   function login(email) {
     setAccount((current) => current || { name: email === "hello@olivethyme.in" ? "Alex Morgan" : (email.split("@")[0] || "Restaurant Partner").split(/[._-]/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" "), email, brand: "Olive & Thyme Group" });
     setAuthMode("");
@@ -236,16 +265,18 @@ export default function PartnerApp() {
     setPage("overview");
     setToast(`${details.name} is ready to welcome guests.`);
   }
-  function importSheet(event) {
+  async function importSheet(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     event.target.value = "";
-    void file.arrayBuffer().then((buffer) => {
-      const workbook = XLSX.read(buffer, { type: "array" });
-      const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
-      if (!rows.length) { setToast("This sheet is empty. Add restaurant rows and try again."); return; }
-      const added = rows.map((row) => {
-        const values = Object.fromEntries(Object.entries(row).map(([key, value]) => [key.toLowerCase().replace(/[\s_-]+/g, ""), String(value).trim()]));
+    try {
+      const rows = file.name.toLowerCase().endsWith(".csv")
+        ? parseCsv(await file.text())
+        : await readXlsxFile(file);
+      if (rows.length < 2) { setToast("This sheet is empty. Add restaurant rows and try again."); return; }
+      const headers = rows[0].map((header) => String(header ?? "").replace(/^\uFEFF/, "").toLowerCase().replace(/[\s_-]+/g, ""));
+      const added = rows.slice(1).map((row) => {
+        const values = Object.fromEntries(headers.map((header, index) => [header, String(row[index] ?? "").trim()]));
         return {
           name: values.outletname || values.restaurantname || values.restaurant || values.name || "",
           brand: values.brandname || values.brand || "",
@@ -257,9 +288,12 @@ export default function PartnerApp() {
       }).filter((item) => item.name);
       if (!added.length) { setToast("No restaurant names found. Include a Restaurant or Outlet Name column."); return; }
       setRestaurants((current) => [...current, ...added]);
+      setSearchQuery("");
       setPage("restaurants");
       setToast(`${added.length} restaurant${added.length === 1 ? "" : "s"} imported successfully.`);
-    }).catch(() => setToast("We couldn't read this sheet. Please check the file and try again."));
+    } catch {
+      setToast("We couldn't read this sheet. Please check the file and try again.");
+    }
   }
   function onPayment(amount) {
     if (!amount) { setToast("Our partner team is here to help at hello@guestpass.app."); return; }
@@ -271,12 +305,12 @@ export default function PartnerApp() {
   }
   if (authMode) return <AuthScreen mode={authMode} setMode={setAuthMode} onLogin={login} onSignup={signup} onBack={() => { setAuthMode(""); setPage("overview"); }} />;
   if (onboarding) return <Onboarding onComplete={finishOnboarding} onCancel={() => { setOnboarding(false); if (account && !restaurants.length) setAuthMode("login"); }} initialName={account?.brand || ""} />;
-  return <><AppShell page={activePage} setPage={setPage} onLogout={logout} account={account} openOnboarding={() => setOnboarding(true)}>
+  return <><AppShell page={page} setPage={setPage} onLogout={logout} account={account} openOnboarding={() => setOnboarding(true)} searchQuery={searchQuery} onSearchChange={setSearchQuery}>
     {toast && <div className="gp-toast" role="status"><Icon name="check" size={16} />{toast}<button aria-label="Dismiss" onClick={() => setToast("")}><Icon name="close" size={15} /></button></div>}
     {page === "overview" && <Overview restaurants={restaurants} account={account} setPage={setPage} openOnboarding={() => setOnboarding(true)} onPayment={onPayment} />}
-    {page === "restaurants" && <RestaurantsPage restaurants={restaurants} openOnboarding={() => setOnboarding(true)} />}
+    {page === "restaurants" && <RestaurantsPage restaurants={restaurants} openOnboarding={() => setOnboarding(true)} searchQuery={searchQuery} onSearchChange={setSearchQuery} />}
     {page === "subscription" && <SubscriptionPage restaurants={restaurants} onPayment={onPayment} />}
     {(page === "payments" || page === "invoices") && <HistoryPage type={page} onPayment={onPayment} />}
     <input id="gp-import-input" ref={fileInput} className="gp-visually-hidden" type="file" accept=".csv,.xlsx,.xls" onChange={importSheet} />
-  </AppShell>{!account && <button className="gp-signin-nudge" onClick={() => setAuthMode("login")}>Sign in to your account</button>}</>;
+  </AppShell></>;
 }
